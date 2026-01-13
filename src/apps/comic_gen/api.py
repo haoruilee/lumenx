@@ -6,6 +6,8 @@ from typing import Optional, Dict, List, Any
 import os
 import shutil
 import uuid
+import logging
+import traceback
 from .pipeline import ComicGenPipeline
 from .models import Script, VideoTask
 from .llm import ScriptProcessor
@@ -25,6 +27,7 @@ if os.path.exists(env_path):
 print(f"STARTUP: OSS_ENDPOINT={os.getenv('OSS_ENDPOINT')}, OSS_BUCKET_NAME={os.getenv('OSS_BUCKET_NAME')}, OSS_BASE_PATH={os.getenv('OSS_BASE_PATH')}")
 
 app = FastAPI(title="AI Comic Gen API")
+logger = logging.getLogger(__name__)
 
 
 app.add_middleware(
@@ -1064,12 +1067,7 @@ class RenderFrameRequest(BaseModel):
 async def render_frame(script_id: str, request: RenderFrameRequest):
     """Renders a specific frame using composition data (I2I)."""
     try:
-        # Collect reference paths if provided
-        ref_paths = []
-        if request.reference_image_url:
-            ref_paths.append(request.reference_image_url)
-            
-        logger.info(f"[Pipeline] Rendering frame {request.frame_id} with {len(ref_paths)} explicit reference images")
+        logger.info(f"Rendering frame {request.frame_id}")
         
         updated_script = pipeline.generate_storyboard_render(
             script_id,
@@ -1082,6 +1080,7 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.exception(f"Error rendering frame {request.frame_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

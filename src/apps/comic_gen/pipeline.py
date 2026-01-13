@@ -918,26 +918,33 @@ class ComicGenPipeline:
                 ref_image_url = composition_data.get('reference_image_url')
                 ref_image_urls = composition_data.get('reference_image_urls', [])
             
-            ref_image_path = None
             ref_image_paths = []
-            
-            # Resolve single path
-            if ref_image_url:
-                if is_object_key(ref_image_url):
-                    ref_image_path = ref_image_url
-                else:
-                    potential_path = os.path.join("output", ref_image_url)
-                    if os.path.exists(potential_path):
-                        ref_image_path = os.path.abspath(potential_path)
             
             # Resolve multiple paths
             for url in ref_image_urls:
-                if is_object_key(url):
+                if not url:
+                    continue
+                if is_object_key(url) or url.startswith("http"):
                     ref_image_paths.append(url)
                 else:
                     potential_path = os.path.join("output", url)
                     if os.path.exists(potential_path):
                         ref_image_paths.append(os.path.abspath(potential_path))
+            
+            # Also handle single path if provided (legacy support)
+            if ref_image_url and ref_image_url not in ref_image_urls:
+                if is_object_key(ref_image_url) or ref_image_url.startswith("http"):
+                    if ref_image_url not in ref_image_paths:
+                        ref_image_paths.append(ref_image_url)
+                else:
+                    potential_path = os.path.join("output", ref_image_url)
+                    if os.path.exists(potential_path):
+                        abs_path = os.path.abspath(potential_path)
+                        if abs_path not in ref_image_paths:
+                            ref_image_paths.append(abs_path)
+            
+            # Use the first path as ref_image_path for legacy generator support if needed
+            ref_image_path = ref_image_paths[0] if ref_image_paths else None
             
             # Use the prompt as-is from frontend (already contains style)
             final_prompt = prompt
@@ -952,6 +959,12 @@ class ComicGenPipeline:
             from .assets import ASPECT_RATIO_TO_SIZE
             storyboard_aspect_ratio = script.model_settings.storyboard_aspect_ratio
             effective_size = ASPECT_RATIO_TO_SIZE.get(storyboard_aspect_ratio, "1024*576")  # Default to landscape
+            
+            # Use model from settings
+            i2i_model = script.model_settings.i2i_model
+            logger.info(f"Rendering frame {frame_id} using model {i2i_model} with {len(ref_image_paths)} reference images")
+            if len(ref_image_urls) > 0:
+                logger.info(f"Original reference URLs from frontend: {ref_image_urls}")
 
             # Call generator
             self.storyboard_generator.generate_frame(
@@ -962,7 +975,8 @@ class ComicGenPipeline:
                 ref_image_paths=ref_image_paths,
                 prompt=final_prompt,
                 batch_size=batch_size,
-                size=effective_size
+                size=effective_size,
+                model_name=i2i_model
             )
             
             self._save_data()

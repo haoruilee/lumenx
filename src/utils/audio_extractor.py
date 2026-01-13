@@ -6,6 +6,7 @@ import os
 import subprocess
 import logging
 from typing import Optional
+from .system_check import get_ffmpeg_path
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,12 @@ class AudioExtractor:
     @staticmethod
     def check_ffmpeg() -> bool:
         """Check if ffmpeg is available"""
+        ffmpeg_path = get_ffmpeg_path()
+        if not ffmpeg_path:
+            return False
         try:
             subprocess.run(
-                ['ffmpeg', '-version'],
+                [ffmpeg_path, '-version'],
                 capture_output=True,
                 check=True
             )
@@ -48,7 +52,8 @@ class AudioExtractor:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        if not AudioExtractor.check_ffmpeg():
+        ffmpeg_path = get_ffmpeg_path()
+        if not ffmpeg_path:
             raise RuntimeError(
                 "ffmpeg not found. Please install ffmpeg:\n"
                 "  macOS: brew install ffmpeg\n"
@@ -68,7 +73,7 @@ class AudioExtractor:
         
         # Build ffmpeg command
         cmd = [
-            'ffmpeg',
+            ffmpeg_path,
             '-i', video_path,           # Input file
             '-vn',                       # No video
             '-acodec', 'libmp3lame' if audio_format == 'mp3' else 'copy',  # Audio codec

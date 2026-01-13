@@ -115,6 +115,7 @@ npm run dev
 
 ## 详细文档
 
+- [用户手册](USER_MANUAL.md) — **首次使用必读**
 - [平台核心代码说明](demand/平台核心代码说明.md)
 - [云创 AI 漫剧制作全流程 SOP](demand/AI漫剧制作全流程SOP.md)
 
@@ -210,7 +211,7 @@ output/
 └── video_inputs/        # 视频生成的输入图片快照
 ```
 
-> **备份提示**: 定期备份 `output/` 目录和 `~/.tron/comic/` （项目数据）以防止数据丢失
+> **备份提示**: 定期备份 `output/` 目录和 `~/.lumen-x/` （用户数据）以防止数据丢失
 
 ## 日志与调试
 
@@ -228,8 +229,7 @@ output/
 ```
 
 **打包应用查看日志：**
-- **macOS**: 应用日志保存在 `~/Library/Logs/` 或应用内控制台
-- **Windows**: 查看应用安装目录下的 `.log` 文件
+- 日志存储在 `~/.lumen-x/logs/app.log`（详见[用户手册 - 日志查看](USER_MANUAL.md#-日志查看)）
 
 ### 常见错误排查
 
