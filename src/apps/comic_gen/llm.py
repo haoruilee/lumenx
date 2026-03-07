@@ -8,6 +8,15 @@ import re
 from typing import List, Dict, Any
 
 from .models import Script, Character, Scene, Prop, StoryboardFrame, GenerationStatus
+
+
+def _strip_markdown_json(content: str) -> str:
+    """Strip markdown code fences from LLM JSON output."""
+    if "```json" in content:
+        content = content.split("```json")[1].split("```")[0]
+    elif "```" in content:
+        content = content.split("```")[1].split("```")[0]
+    return content.strip()
 from ...utils import get_logger
 
 logger = get_logger(__name__)
@@ -49,13 +58,8 @@ class ScriptProcessor:
                 content = response.output.choices[0].message.content
                 logger.debug(f"LLM Response Content:\n{content}")
                 
-                # Clean up markdown code blocks if present
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                    
-                data = json.loads(content.strip())
+                content = _strip_markdown_json(content)
+                data = json.loads(content)
                 return self._create_script_from_data(title, text, data)
             else:
                 error_msg = f"LLM 调用失败: {response.code} - {response.message}"
@@ -430,13 +434,7 @@ CRITICAL STYLE GUIDELINES:
                 logger.debug(f"Style Analysis Response:\n{content}")
                 
                 # Clean up markdown code blocks if present
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                
-                # Additional cleanup: remove any leading/trailing whitespace and newlines
-                content = content.strip()
+                content = _strip_markdown_json(content)
                 
                 # Safety check: if content is suspiciously long, truncate it
                 # This prevents issues where the model gets stuck in a loop
@@ -706,7 +704,7 @@ Props:
                     if frames is not None:
                         return frames
 
-                raise ValueError(
+                raise RuntimeError(
                     "AI 模型输出的 JSON 格式不合规，自动重试后仍然失败。请重新点击生成按钮再试一次。"
                 )
             else:
@@ -715,7 +713,7 @@ Props:
                     f"AI 模型调用失败 (错误码: {response.code})，请稍后重试。"
                 )
 
-        except (ValueError, RuntimeError):
+        except RuntimeError:
             raise  # Re-raise our own descriptive errors
         except Exception as e:
             logger.error(f"Error in storyboard analysis: {e}", exc_info=True)
@@ -723,11 +721,7 @@ Props:
     
     def _parse_storyboard_json(self, content: str):
         """Try to parse storyboard JSON from LLM output. Returns frames list or None on failure."""
-        # Strip markdown code fences if present
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
+        content = _strip_markdown_json(content)
 
         try:
             result = json.loads(content.strip())
@@ -838,10 +832,7 @@ Return STRICTLY a JSON object:
                 logger.debug(f"Polished Prompt Raw: {content}")
                 
                 # Parse JSON response
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
+                content = _strip_markdown_json(content)
                 
                 try:
                     result = json.loads(content.strip())
@@ -913,12 +904,9 @@ Return STRICTLY a JSON object:
             if response.status_code == 200:
                 content = response.output.choices[0].message.content.strip()
                 logger.debug(f"Video Prompt Polish Raw: {content[:200]}...")
-                
+
                 # Parse JSON
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
+                content = _strip_markdown_json(content)
                 
                 try:
                     result = json.loads(content.strip())
@@ -1011,12 +999,9 @@ OUTPUT:
             if response.status_code == 200:
                 content = response.output.choices[0].message.content.strip()
                 logger.debug(f"R2V Polished Raw: {content[:200]}...")
-                
+
                 # Parse JSON
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
+                content = _strip_markdown_json(content)
                 
                 try:
                     result = json.loads(content.strip())

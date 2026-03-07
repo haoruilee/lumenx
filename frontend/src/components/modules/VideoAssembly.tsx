@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Play, Check, ChevronRight, Loader2, Film, AlertTriangle, Layout, Clock, FileText, Download } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
-import { getAssetUrl } from "@/lib/utils";
+import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
 
 export default function VideoAssembly() {
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -55,10 +55,7 @@ export default function VideoAssembly() {
             console.error("Failed to merge videos:", error);
 
             // Extract detailed error message from backend
-            const errorDetail = error.response?.data?.detail ||
-                error.response?.data?.message ||
-                error.message ||
-                "Unknown error occurred during video merge";
+            const errorDetail = extractErrorDetail(error, "Unknown error occurred during video merge");
 
             setMergeError(errorDetail);
 

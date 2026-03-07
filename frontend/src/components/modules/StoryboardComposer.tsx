@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
-import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
+import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
 
@@ -65,7 +65,7 @@ export default function StoryboardComposer() {
             }
         } catch (error: any) {
             console.error("Analyze to storyboard failed:", error);
-            const detail = error?.response?.data?.detail || error?.message || "";
+            const detail = extractErrorDetail(error, "");
             if (detail.includes("JSON") || detail.includes("格式")) {
                 alert(`分镜生成失败：AI 模型输出格式异常。\n\n这是模型偶发的格式问题，通常重试即可解决。请再次点击生成按钮。`);
             } else {
