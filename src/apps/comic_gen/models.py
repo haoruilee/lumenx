@@ -273,9 +273,40 @@ class Script(BaseModel):
 
     # Custom prompt configuration for polish stages
     prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Custom system prompts for polish stages")
-    
+
     # Merged video URL
     merged_video_url: Optional[str] = Field(None, description="URL of the merged final video")
-    
+
+    # Series association
+    series_id: Optional[str] = Field(None, description="ID of the parent Series, None for standalone projects")
+    episode_number: Optional[int] = Field(None, description="Episode number within the Series")
+
+    created_at: float
+    updated_at: float
+
+
+class Series(BaseModel):
+    """A Series groups multiple Episodes with shared assets and configuration."""
+    id: str = Field(..., description="Unique identifier for the series")
+    title: str = Field(..., description="Title of the series")
+    description: str = Field("", description="Series description/synopsis")
+
+    # Shared asset library
+    characters: List[Character] = Field(default_factory=list, description="Shared character assets")
+    scenes: List[Scene] = Field(default_factory=list, description="Shared scene assets")
+    props: List[Prop] = Field(default_factory=list, description="Shared prop assets")
+
+    # Unified visual style
+    art_direction: Optional[ArtDirection] = Field(None, description="Series-level art direction")
+
+    # Series-level prompt configuration
+    prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Series-level custom prompts")
+
+    # Model settings
+    model_settings: ModelSettings = Field(default_factory=ModelSettings, description="Series-level model settings")
+
+    # Episode references
+    episode_ids: List[str] = Field(default_factory=list, description="Ordered list of Episode/Script IDs")
+
     created_at: float
     updated_at: float

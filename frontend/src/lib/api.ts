@@ -545,6 +545,96 @@ export const api = {
         }
         return response.json();
     },
+
+    // ============================================
+    // Series APIs
+    // ============================================
+
+    // Series CRUD
+    createSeries: async (title: string, description?: string) => {
+        const response = await axios.post(`${API_URL}/series`, { title, description });
+        return response.data;
+    },
+    listSeries: async () => {
+        const response = await axios.get(`${API_URL}/series`);
+        return response.data;
+    },
+    getSeries: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}`);
+        return response.data;
+    },
+    updateSeries: async (seriesId: string, data: { title?: string; description?: string }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}`, data);
+        return response.data;
+    },
+    deleteSeries: async (seriesId: string) => {
+        const response = await axios.delete(`${API_URL}/series/${seriesId}`);
+        return response.data;
+    },
+
+    // Series Episodes
+    getSeriesEpisodes: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/episodes`);
+        return response.data;
+    },
+    addEpisodeToSeries: async (seriesId: string, scriptId: string, episodeNumber?: number) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/episodes`, { script_id: scriptId, episode_number: episodeNumber });
+        return response.data;
+    },
+    removeEpisodeFromSeries: async (seriesId: string, scriptId: string) => {
+        const response = await axios.delete(`${API_URL}/series/${seriesId}/episodes/${scriptId}`);
+        return response.data;
+    },
+
+    // Series Assets
+    getSeriesAssets: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/assets`);
+        return response.data;
+    },
+    importSeriesAssets: async (seriesId: string, sourceSeriesId: string, assetIds: string[]) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/assets/import`, { source_series_id: sourceSeriesId, asset_ids: assetIds });
+        return response.data;
+    },
+
+    // Series Prompt Config
+    getSeriesPromptConfig: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/prompt_config`);
+        return response.data;
+    },
+    updateSeriesPromptConfig: async (seriesId: string, config: { storyboard_polish?: string; video_polish?: string; r2v_polish?: string }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/prompt_config`, config);
+        return response.data;
+    },
+    getSeriesModelSettings: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/model_settings`);
+        return response.data;
+    },
+    updateSeriesModelSettings: async (seriesId: string, settings: {
+        t2i_model?: string;
+        i2i_model?: string;
+        i2v_model?: string;
+        character_aspect_ratio?: string;
+        scene_aspect_ratio?: string;
+        prop_aspect_ratio?: string;
+        storyboard_aspect_ratio?: string;
+    }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/model_settings`, settings);
+        return response.data;
+    },
+
+    // File Import
+    importFilePreview: async (file: File, suggestedEpisodes: number = 3) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await axios.post(`${API_URL}/series/import/preview?suggested_episodes=${suggestedEpisodes}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+    },
+    importFileConfirm: async (data: { title: string; description?: string; text: string; episodes: any[] }) => {
+        const response = await axios.post(`${API_URL}/series/import/confirm`, data);
+        return response.data;
+    },
 };
 
 // ============================================

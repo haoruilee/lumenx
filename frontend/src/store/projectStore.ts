@@ -272,6 +272,21 @@ export interface PromptConfig {
     r2v_polish: string;
 }
 
+export interface Series {
+    id: string;
+    title: string;
+    description: string;
+    characters: Character[];
+    scenes: Scene[];
+    props: Prop[];
+    art_direction?: ArtDirection;
+    prompt_config?: PromptConfig;
+    model_settings?: ModelSettings;
+    episode_ids: string[];
+    created_at: number;
+    updated_at: number;
+}
+
 export interface Project {
     id: string;
     title: string;
@@ -290,6 +305,8 @@ export interface Project {
     model_settings?: ModelSettings;
     prompt_config?: PromptConfig;
     merged_video_url?: string;
+    series_id?: string;
+    episode_number?: number;
 }
 
 interface ProjectStore {
@@ -334,6 +351,15 @@ interface ProjectStore {
     // Storyboard Analysis State (persists across tab switches)
     isAnalyzingStoryboard: boolean;
     setIsAnalyzingStoryboard: (value: boolean) => void;
+
+    // Series State
+    seriesList: Series[];
+    currentSeries: Series | null;
+    fetchSeriesList: () => Promise<void>;
+    fetchSeries: (id: string) => Promise<void>;
+    createSeries: (title: string, description?: string) => Promise<Series>;
+    deleteSeries: (id: string) => Promise<void>;
+    setCurrentSeries: (series: Series | null) => void;
 }
 
 export const useProjectStore = create<ProjectStore>()(
@@ -542,6 +568,56 @@ export const useProjectStore = create<ProjectStore>()(
             // Storyboard Analysis State
             isAnalyzingStoryboard: false,
             setIsAnalyzingStoryboard: (value: boolean) => set({ isAnalyzingStoryboard: value }),
+
+            // Series State
+            seriesList: [],
+            currentSeries: null,
+
+            fetchSeriesList: async () => {
+                try {
+                    const seriesList = await api.listSeries();
+                    set({ seriesList });
+                } catch (error) {
+                    console.error('Failed to fetch series list:', error);
+                }
+            },
+
+            fetchSeries: async (id: string) => {
+                try {
+                    const series = await api.getSeries(id);
+                    set({ currentSeries: series });
+                } catch (error) {
+                    console.error('Failed to fetch series:', error);
+                }
+            },
+
+            createSeries: async (title: string, description?: string) => {
+                try {
+                    const series = await api.createSeries(title, description);
+                    set((state) => ({
+                        seriesList: [...state.seriesList, series],
+                    }));
+                    return series;
+                } catch (error) {
+                    console.error('Failed to create series:', error);
+                    throw error;
+                }
+            },
+
+            deleteSeries: async (id: string) => {
+                try {
+                    await api.deleteSeries(id);
+                    set((state) => ({
+                        seriesList: state.seriesList.filter((s) => s.id !== id),
+                        currentSeries: state.currentSeries?.id === id ? null : state.currentSeries,
+                    }));
+                } catch (error) {
+                    console.error('Failed to delete series:', error);
+                    throw error;
+                }
+            },
+
+            setCurrentSeries: (series: Series | null) => set({ currentSeries: series }),
         }),
         {
             name: 'project-storage',

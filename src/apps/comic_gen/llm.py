@@ -312,6 +312,63 @@ class ScriptProcessor:
             updated_at=time.time()
         )
 
+    def split_into_episodes(self, text: str, suggested_episodes: int = 3) -> List[Dict[str, Any]]:
+        """
+        Uses LLM to split a long text into episodes by narrative rhythm.
+        Returns a list of episode dicts with title, summary, start/end markers, etc.
+        """
+        if not self.is_configured:
+            raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
+
+        MAX_TEXT_LENGTH = 80000
+        if len(text) > MAX_TEXT_LENGTH:
+            text = text[:MAX_TEXT_LENGTH] + "\n\n[文本已截断，请基于已有内容进行划分]"
+
+        prompt = f"""你是一名专业的剧本编剧和分集策划师。
+
+请将以下小说/剧本文本按叙事节奏划分为约 {suggested_episodes} 集。
+
+划分原则：
+1. 每集应有完整的叙事弧（开端/发展/高潮或悬念）
+2. 在自然的情节转折点或场景切换处分集
+3. 各集内容量大致均衡，但优先保证叙事完整性
+4. 实际集数可以在建议集数 ±2 范围内浮动
+
+输出纯 JSON（不要 markdown 代码块）:
+{{
+  "episodes": [
+    {{
+      "episode_number": 1,
+      "title": "集标题",
+      "summary": "50字以内的内容摘要",
+      "start_marker": "该集起始的原文前20字",
+      "end_marker": "该集结束的原文后20字",
+      "estimated_duration": "预估时长（分钟）"
+    }}
+  ]
+}}
+
+原文如下：
+
+{text}"""
+
+        try:
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = _strip_markdown_json(content)
+            data = json.loads(content)
+            episodes = data.get("episodes", [])
+            if not episodes:
+                raise RuntimeError("LLM 未返回任何分集数据")
+            return episodes
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"LLM 返回的分集数据格式错误: {e}")
+        except ValueError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"分集划分失败: {str(e)}")
+
     def _mock_parse(self, title: str, text: str) -> Script:
         # ... (Existing mock logic moved here) ...
         script_id = str(uuid.uuid4())
