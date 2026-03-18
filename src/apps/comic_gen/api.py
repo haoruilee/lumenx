@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 import asyncio
 import time
@@ -13,8 +13,8 @@ import uuid
 import logging
 import traceback
 from .pipeline import ComicGenPipeline
-from .models import Script, VideoTask
-from .llm import ScriptProcessor
+from .models import Script, VideoTask, PromptConfig, Series
+from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
 from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
 from ...utils import setup_logging
 from fastapi.responses import JSONResponse
@@ -116,6 +116,38 @@ def signed_response(data):
     
     # Return JSONResponse directly to avoid Pydantic re-validation stripping fields
     return JSONResponse(content=processed_data)
+
+
+# ============================================================
+# Shared Request Models (used by both Project and Series endpoints)
+# ============================================================
+
+class GenerateAssetRequest(BaseModel):
+    asset_id: str
+    asset_type: str
+    style_preset: str = "Cinematic"
+    reference_image_url: Optional[str] = None
+    style_prompt: Optional[str] = None
+    generation_type: str = "all"  # 'full_body', 'three_view', 'headshot', 'all'
+    prompt: Optional[str] = None
+    apply_style: bool = True
+    negative_prompt: Optional[str] = None
+    batch_size: int = 1
+    model_name: Optional[str] = None
+
+class ToggleLockRequest(BaseModel):
+    asset_id: str
+    asset_type: str
+
+class UpdateAssetImageRequest(BaseModel):
+    asset_id: str
+    asset_type: str
+    image_url: str
+
+class UpdateAssetAttributesRequest(BaseModel):
+    asset_id: str
+    asset_type: str
+    attributes: Dict[str, Any]
 
 
 @app.get("/system/check")
@@ -254,6 +286,359 @@ async def list_projects():
     """Lists all projects from backend storage."""
     scripts = list(pipeline.scripts.values())
     return signed_response(scripts)
+
+
+# ============================================================
+# Series CRUD
+# ============================================================
+
+class CreateSeriesRequest(BaseModel):
+    title: str
+    description: str = ""
+
+
+class UpdateSeriesRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+@app.post("/series")
+async def create_series(request: CreateSeriesRequest):
+    """Create a new Series."""
+    series = pipeline.create_series(request.title, request.description)
+    return signed_response(series)
+
+
+@app.get("/series")
+async def list_series():
+    """List all Series."""
+    series_list = pipeline.list_series()
+    return signed_response(series_list)
+
+
+@app.get("/series/{series_id}")
+async def get_series(series_id: str):
+    """Get Series details including assets and episode list."""
+    series = pipeline.get_series(series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    # Include episode summaries
+    episodes = pipeline.get_series_episodes(series_id)
+    result = series.model_dump()
+    result["episodes"] = [
+        {
+            "id": ep.id,
+            "title": ep.title,
+            "episode_number": ep.episode_number,
+            "created_at": ep.created_at,
+            "updated_at": ep.updated_at,
+        }
+        for ep in episodes
+    ]
+    return signed_response(result)
+
+
+@app.put("/series/{series_id}")
+async def update_series(series_id: str, request: UpdateSeriesRequest):
+    """Update Series title/description."""
+    try:
+        updates = {k: v for k, v in request.model_dump().items() if v is not None}
+        series = pipeline.update_series(series_id, updates)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/series/{series_id}")
+async def delete_series(series_id: str):
+    """Delete a Series and disassociate its episodes."""
+    try:
+        pipeline.delete_series(series_id)
+        return {"status": "deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+class AddEpisodeRequest(BaseModel):
+    script_id: str
+    episode_number: Optional[int] = None
+
+
+@app.post("/series/{series_id}/episodes")
+async def add_episode_to_series(series_id: str, request: AddEpisodeRequest):
+    """Add an existing project as an episode to a Series."""
+    try:
+        series = pipeline.add_episode_to_series(series_id, request.script_id, request.episode_number)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/series/{series_id}/episodes/{script_id}")
+async def remove_episode_from_series(series_id: str, script_id: str):
+    """Remove an episode from a Series (does not delete the project)."""
+    try:
+        series = pipeline.remove_episode_from_series(series_id, script_id)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/series/{series_id}/episodes")
+async def get_series_episodes(series_id: str):
+    """Get all episodes in a Series."""
+    try:
+        episodes = pipeline.get_series_episodes(series_id)
+        return signed_response(episodes)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/series/{series_id}/prompt_config")
+async def get_series_prompt_config(series_id: str):
+    """Get Series prompt config with system defaults."""
+    series = pipeline.get_series(series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    return {
+        "prompt_config": series.prompt_config.model_dump(),
+        "defaults": {
+            "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
+            "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
+            "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
+        },
+    }
+
+
+@app.put("/series/{series_id}/prompt_config")
+async def update_series_prompt_config(series_id: str, config: PromptConfig):
+    """Update Series-level prompt config."""
+    try:
+        series = pipeline.update_series(series_id, {"prompt_config": config})
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ============================================================
+# Series Model Settings
+# ============================================================
+
+class UpdateModelSettingsRequest(BaseModel):
+    t2i_model: Optional[str] = None
+    i2i_model: Optional[str] = None
+    i2v_model: Optional[str] = None
+    character_aspect_ratio: Optional[str] = None
+    scene_aspect_ratio: Optional[str] = None
+    prop_aspect_ratio: Optional[str] = None
+    storyboard_aspect_ratio: Optional[str] = None
+
+@app.get("/series/{series_id}/model_settings")
+async def get_series_model_settings(series_id: str):
+    """Get Series model settings."""
+    series = pipeline.get_series(series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    return series.model_settings.model_dump()
+
+
+@app.put("/series/{series_id}/model_settings")
+async def update_series_model_settings(series_id: str, settings: UpdateModelSettingsRequest):
+    """Update Series-level model settings."""
+    updates = {k: v for k, v in settings.model_dump().items() if v is not None}
+    if not updates:
+        series = pipeline.get_series(series_id)
+        if not series:
+            raise HTTPException(status_code=404, detail="Series not found")
+        return signed_response(series)
+    try:
+        current_series = pipeline.get_series(series_id)
+        if not current_series:
+            raise HTTPException(status_code=404, detail="Series not found")
+        ms = current_series.model_settings.model_copy(update=updates)
+        series = pipeline.update_series(series_id, {"model_settings": ms})
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ============================================================
+# Series Asset Operations
+# ============================================================
+
+@app.get("/series/{series_id}/assets")
+async def get_series_assets(series_id: str):
+    """Get all shared assets from a Series."""
+    series = pipeline.get_series(series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    return signed_response({
+        "characters": [c.model_dump() for c in series.characters],
+        "scenes": [s.model_dump() for s in series.scenes],
+        "props": [p.model_dump() for p in series.props],
+    })
+
+
+@app.post("/series/{series_id}/assets/generate")
+async def generate_series_asset(series_id: str, request: GenerateAssetRequest, background_tasks: BackgroundTasks):
+    """Generate a single asset for a Series (async)."""
+    try:
+        series, task_id = pipeline.generate_series_asset(
+            series_id,
+            request.asset_id,
+            request.asset_type,
+            request.style_preset,
+            request.reference_image_url,
+            request.style_prompt,
+            request.generation_type,
+            request.prompt,
+            request.apply_style,
+            request.negative_prompt,
+            request.batch_size,
+            request.model_name
+        )
+        background_tasks.add_task(pipeline.process_asset_generation_task, task_id)
+        response_data = series.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/series/{series_id}/assets/toggle_lock")
+async def toggle_series_asset_lock(series_id: str, request: ToggleLockRequest):
+    """Toggle the locked status of a Series asset."""
+    try:
+        series = pipeline.toggle_series_asset_lock(series_id, request.asset_id, request.asset_type)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/series/{series_id}/assets/update_image")
+async def update_series_asset_image(series_id: str, request: UpdateAssetImageRequest):
+    """Update a Series asset's image URL."""
+    try:
+        series = pipeline.update_series_asset_image(series_id, request.asset_id, request.asset_type, request.image_url)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/series/{series_id}/assets/update_attributes")
+async def update_series_asset_attributes(series_id: str, request: UpdateAssetAttributesRequest):
+    """Update arbitrary attributes of a Series asset."""
+    try:
+        series = pipeline.update_series_asset_attributes(
+            series_id, request.asset_id, request.asset_type, request.attributes
+        )
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ImportAssetsRequest(BaseModel):
+    source_series_id: str
+    asset_ids: List[str]
+
+
+@app.post("/series/{series_id}/assets/import")
+async def import_series_assets(series_id: str, request: ImportAssetsRequest):
+    """Deep-copy assets from another Series into this one."""
+    try:
+        series, imported_ids, skipped_ids = pipeline.import_assets_from_series(series_id, request.source_series_id, request.asset_ids)
+        return signed_response(series)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# File Import & Episode Splitting
+# ============================================================
+
+@app.post("/series/import/preview")
+async def import_file_preview(
+    file: UploadFile = File(...),
+    suggested_episodes: int = 3,
+):
+    """Upload a txt/md file and get LLM episode split preview."""
+    if suggested_episodes < 1 or suggested_episodes > 50:
+        raise HTTPException(status_code=400, detail="建议集数应在 1-50 之间")
+    try:
+        content_bytes = await file.read()
+        text = content_bytes.decode("utf-8")
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="文件内容为空")
+
+        loop = asyncio.get_event_loop()
+        episodes = await loop.run_in_executor(
+            None,
+            partial(pipeline.import_file_and_split, text, suggested_episodes)
+        )
+        # Store text in pipeline cache, return import_id instead of full text
+        import_id = str(uuid.uuid4())
+        pipeline._import_cache[import_id] = text
+        return {
+            "filename": file.filename,
+            "text_length": len(text),
+            "suggested_episodes": suggested_episodes,
+            "episodes": episodes,
+            "import_id": import_id,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("File import preview failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ConfirmImportRequest(BaseModel):
+    title: str
+    description: str = ""
+    import_id: str = ""
+    text: Optional[str] = None
+    episodes: List[Dict[str, Any]]  # episode_number, title, start_marker, end_marker, ...
+
+
+@app.post("/series/import/confirm")
+async def import_file_confirm(request: ConfirmImportRequest):
+    """Confirm the episode split and create Series + Episodes."""
+    try:
+        # Prefer import_id from cache, fallback to request.text
+        text = None
+        if request.import_id:
+            text = pipeline._import_cache.pop(request.import_id, None)
+        if not text:
+            text = request.text
+        if not text:
+            raise ValueError("No text available. Provide import_id or text.")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            partial(
+                pipeline.create_series_from_import,
+                request.title,
+                text,
+                request.episodes,
+                request.description,
+            )
+        )
+        return signed_response(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Import confirm failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class EnvConfig(BaseModel):
@@ -450,6 +835,13 @@ async def delete_project(script_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
     
     try:
+        # If project belongs to a Series, remove from episode_ids
+        if script.series_id:
+            series = pipeline.get_series(script.series_id)
+            if series and script_id in series.episode_ids:
+                series.episode_ids.remove(script_id)
+                pipeline._save_series_data()
+
         # Remove from pipeline scripts
         del pipeline.scripts[script_id]
         pipeline._save_data()
@@ -637,6 +1029,7 @@ class RefinePromptRequest(BaseModel):
     frame_id: str
     raw_prompt: str
     assets: list = []  # List of asset references
+    feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
 
 
 @app.post("/projects/{script_id}/storyboard/refine_prompt")
@@ -647,10 +1040,11 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
     """
     try:
         result = pipeline.refine_frame_prompt(
-            script_id, 
-            request.frame_id, 
-            request.raw_prompt, 
-            request.assets
+            script_id,
+            request.frame_id,
+            request.raw_prompt,
+            request.assets,
+            request.feedback,
         )
         return result
     except ValueError as e:
@@ -771,20 +1165,6 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class GenerateAssetRequest(BaseModel):
-    asset_id: str
-    asset_type: str
-    style_preset: str = "Cinematic"
-    reference_image_url: Optional[str] = None
-    style_prompt: Optional[str] = None
-    generation_type: str = "all"  # 'full_body', 'three_view', 'headshot', 'all'
-    prompt: Optional[str] = None  # Specific prompt for this generation step
-    apply_style: bool = True
-    negative_prompt: Optional[str] = None
-    batch_size: int = 1
-    model_name: Optional[str] = None  # Override model, or use project's t2i_model setting
-
-
 @app.post("/projects/{script_id}/assets/generate")
 async def generate_single_asset(script_id: str, request: GenerateAssetRequest, background_tasks: BackgroundTasks):
     """Generates a single asset with specific options (async).
@@ -883,11 +1263,6 @@ async def delete_asset_video(script_id: str, asset_type: str, asset_id: str, vid
 
 
 
-class ToggleLockRequest(BaseModel):
-    asset_id: str
-    asset_type: str
-
-
 @app.post("/projects/{script_id}/assets/toggle_lock", response_model=Script)
 async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
     """Toggles the locked status of an asset."""
@@ -903,12 +1278,6 @@ async def toggle_asset_lock(script_id: str, request: ToggleLockRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
-class UpdateAssetImageRequest(BaseModel):
-    asset_id: str
-    asset_type: str
-    image_url: str
 
 
 @app.post("/projects/{script_id}/assets/update_image", response_model=Script)
@@ -927,12 +1296,6 @@ async def update_asset_image(script_id: str, request: UpdateAssetImageRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
-class UpdateAssetAttributesRequest(BaseModel):
-    asset_id: str
-    asset_type: str
-    attributes: Dict[str, Any]
 
 
 @app.post("/projects/{script_id}/assets/update_attributes", response_model=Script)
@@ -1047,15 +1410,6 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class UpdateModelSettingsRequest(BaseModel):
-    t2i_model: Optional[str] = None
-    i2i_model: Optional[str] = None
-    i2v_model: Optional[str] = None
-    character_aspect_ratio: Optional[str] = None
-    scene_aspect_ratio: Optional[str] = None
-    prop_aspect_ratio: Optional[str] = None
-    storyboard_aspect_ratio: Optional[str] = None
-
 @app.post("/projects/{script_id}/model_settings", response_model=Script)
 async def update_model_settings(script_id: str, request: UpdateModelSettingsRequest):
     """Updates project's model settings for T2I/I2I/I2V and aspect ratios."""
@@ -1076,6 +1430,55 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class UpdatePromptConfigRequest(BaseModel):
+    storyboard_polish: str = ""
+    video_polish: str = ""
+    r2v_polish: str = ""
+
+
+@app.get("/projects/{script_id}/prompt_config")
+async def get_prompt_config(script_id: str):
+    """Returns project prompt_config and system default prompts for reference."""
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+        config = script.prompt_config if hasattr(script, 'prompt_config') else PromptConfig()
+        return {
+            "prompt_config": config.model_dump(),
+            "defaults": {
+                "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
+                "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
+                "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/projects/{script_id}/prompt_config")
+async def update_prompt_config(script_id: str, request: UpdatePromptConfigRequest):
+    """Updates project custom prompt configuration. Empty string = use system default."""
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+        script.prompt_config = PromptConfig(
+            storyboard_polish=request.storyboard_polish,
+            video_polish=request.video_polish,
+            r2v_polish=request.r2v_polish,
+        )
+        pipeline._save_data()
+        return {"prompt_config": script.prompt_config.model_dump()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BindVoiceRequest(BaseModel):
     voice_id: str
     voice_name: str
@@ -1091,6 +1494,28 @@ async def bind_voice(script_id: str, char_id: str, request: BindVoiceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class UpdateVoiceParamsRequest(BaseModel):
+    speed: float = 1.0
+    pitch: float = 1.0
+    volume: int = 50
+
+
+@app.put("/projects/{script_id}/characters/{char_id}/voice_params", response_model=Script)
+async def update_voice_params(script_id: str, char_id: str, request: UpdateVoiceParamsRequest):
+    """Updates voice parameters for a character."""
+    script = pipeline.get_script(script_id)
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    char = next((c for c in script.characters if c.id == char_id), None)
+    if not char:
+        raise HTTPException(status_code=404, detail="Character not found")
+    char.voice_speed = request.speed
+    char.voice_pitch = request.pitch
+    char.voice_volume = request.volume
+    pipeline._save_data()
+    return signed_response(script)
+
+
 @app.get("/voices")
 async def get_voices():
     """Returns list of available voices."""
@@ -1100,13 +1525,14 @@ async def get_voices():
 class GenerateLineAudioRequest(BaseModel):
     speed: float = 1.0
     pitch: float = 1.0
+    volume: int = 50
 
 
 @app.post("/projects/{script_id}/frames/{frame_id}/audio", response_model=Script)
 async def generate_line_audio(script_id: str, frame_id: str, request: GenerateLineAudioRequest):
     """Generates audio for a specific frame with parameters."""
     try:
-        updated_script = pipeline.generate_dialogue_line(script_id, frame_id, request.speed, request.pitch)
+        updated_script = pipeline.generate_dialogue_line(script_id, frame_id, request.speed, request.pitch, request.volume)
         return signed_response(updated_script)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1353,6 +1779,45 @@ async def merge_videos(script_id: str):
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
 
 
+# ===== Export Endpoint =====
+
+class ExportRequest(BaseModel):
+    resolution: str = "1080p"
+    format: str = "mp4"
+    subtitles: str = "none"
+
+@app.post("/projects/{script_id}/export")
+async def export_project(script_id: str, request: ExportRequest):
+    """Export project video by merging all selected frame videos.
+
+    Currently delegates to the existing merge_videos pipeline.
+    resolution/format/subtitles parameters are accepted but not yet applied
+    (requires FFmpeg pipeline iteration).
+    """
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # If already merged, return existing URL directly
+        if script.merged_video_url:
+            return signed_response({"url": script.merged_video_url})
+
+        # Otherwise, run merge pipeline
+        merged_script = pipeline.merge_videos(script_id)
+        return signed_response({"url": merged_script.merged_video_url})
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"[EXPORT ERROR] {e}")
+        logger.exception("An error occurred")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
 # ===== Art Direction Endpoints =====
 
 class AnalyzeStyleRequest(BaseModel):
@@ -1437,16 +1902,41 @@ async def get_style_presets():
 # NOTE: /storyboard/polish_prompt removed - use /storyboard/refine_prompt instead
 
 
+def _get_custom_prompt(script_id: str, field: str) -> str:
+    """Read a custom prompt with 3-level fallback: Episode → Series → system default.
+    Returns empty string if result equals system default (so LLM method uses its built-in)."""
+    if not script_id:
+        return ""
+    script = pipeline.get_script(script_id)
+    if not script:
+        return ""
+    series = pipeline.get_series(script.series_id) if script.series_id else None
+    effective = pipeline.get_effective_prompt(field, script, series)
+    # If it's the system default, return empty so the LLM method uses its built-in default
+    from .llm import DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
+    defaults = {
+        "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
+        "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
+        "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
+    }
+    if effective == defaults.get(field, ""):
+        return ""
+    return effective
+
+
 class PolishVideoPromptRequest(BaseModel):
     draft_prompt: str
+    feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
+    script_id: str = ""  # Optional: project ID to load custom prompt config
 
 
 @app.post("/video/polish_prompt")
 async def polish_video_prompt(request: PolishVideoPromptRequest):
     """Polishes a video generation prompt using LLM. Returns bilingual prompts."""
     try:
+        custom_prompt = _get_custom_prompt(request.script_id, "video_polish")
         processor = ScriptProcessor()
-        result = processor.polish_video_prompt(request.draft_prompt)
+        result = processor.polish_video_prompt(request.draft_prompt, request.feedback, custom_prompt)
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")
@@ -1464,15 +1954,18 @@ class RefSlot(BaseModel):
 class PolishR2VPromptRequest(BaseModel):
     draft_prompt: str
     slots: List[RefSlot]
+    feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
+    script_id: str = ""  # Optional: project ID to load custom prompt config
 
 
 @app.post("/video/polish_r2v_prompt")
 async def polish_r2v_prompt(request: PolishR2VPromptRequest):
     """Polishes a R2V (Reference-to-Video) prompt using LLM. Returns bilingual prompts."""
     try:
+        custom_prompt = _get_custom_prompt(request.script_id, "r2v_polish")
         processor = ScriptProcessor()
         slot_info = [{"description": s.description} for s in request.slots]
-        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info)
+        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info, request.feedback, custom_prompt)
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")
@@ -1517,124 +2010,8 @@ async def get_env_config():
 
 
 # ============================================
-# CRUD Endpoints for Assets and Frames
+# Prop CRUD Endpoints
 # ============================================
-
-# --- Character CRUD ---
-
-class CreateCharacterRequest(BaseModel):
-    name: str
-    description: str = ""
-    age: Optional[str] = None
-    gender: Optional[str] = None
-    clothing: Optional[str] = None
-
-@app.post("/projects/{script_id}/characters")
-async def create_character(script_id: str, request: CreateCharacterRequest):
-    """Creates a new character in the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    import uuid
-    from .models import Character, GenerationStatus
-    
-    new_character = Character(
-        id=f"char_{uuid.uuid4().hex[:8]}",
-        name=request.name,
-        description=request.description,
-        age=request.age,
-        gender=request.gender,
-        clothing=request.clothing,
-        status=GenerationStatus.PENDING
-    )
-    
-    script.characters.append(new_character)
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "character": new_character.dict()}
-
-
-@app.delete("/projects/{script_id}/characters/{character_id}")
-async def delete_character(script_id: str, character_id: str):
-    """Deletes a character from the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Find and remove the character
-    original_count = len(script.characters)
-    script.characters = [c for c in script.characters if c.id != character_id]
-    
-    if len(script.characters) == original_count:
-        raise HTTPException(status_code=404, detail="Character not found")
-    
-    # Remove character references from frames
-    for frame in script.frames:
-        if character_id in frame.character_ids:
-            frame.character_ids.remove(character_id)
-    
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "message": f"Character {character_id} deleted"}
-
-
-# --- Scene CRUD ---
-
-class CreateSceneRequest(BaseModel):
-    name: str
-    description: str = ""
-    time_of_day: Optional[str] = None
-    lighting_mood: Optional[str] = None
-
-@app.post("/projects/{script_id}/scenes")
-async def create_scene(script_id: str, request: CreateSceneRequest):
-    """Creates a new scene in the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    import uuid
-    from .models import Scene, GenerationStatus
-    
-    new_scene = Scene(
-        id=f"scene_{uuid.uuid4().hex[:8]}",
-        name=request.name,
-        description=request.description,
-        time_of_day=request.time_of_day,
-        lighting_mood=request.lighting_mood,
-        status=GenerationStatus.PENDING
-    )
-    
-    script.scenes.append(new_scene)
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "scene": new_scene.dict()}
-
-
-@app.delete("/projects/{script_id}/scenes/{scene_id}")
-async def delete_scene(script_id: str, scene_id: str):
-    """Deletes a scene from the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    original_count = len(script.scenes)
-    script.scenes = [s for s in script.scenes if s.id != scene_id]
-    
-    if len(script.scenes) == original_count:
-        raise HTTPException(status_code=404, detail="Scene not found")
-    
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "message": f"Scene {scene_id} deleted"}
-
-
-# --- Prop CRUD ---
 
 class CreatePropRequest(BaseModel):
     name: str
@@ -1646,22 +2023,22 @@ async def create_prop(script_id: str, request: CreatePropRequest):
     script = pipeline.get_script(script_id)
     if not script:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     import uuid
     from .models import Prop, GenerationStatus
-    
+
     new_prop = Prop(
         id=f"prop_{uuid.uuid4().hex[:8]}",
         name=request.name,
         description=request.description,
         status=GenerationStatus.PENDING
     )
-    
+
     script.props.append(new_prop)
     script.updated_at = time.time()
     pipeline._save_data()
-    
-    return {"status": "success", "prop": new_prop.dict()}
+
+    return signed_response(script)
 
 
 @app.delete("/projects/{script_id}/props/{prop_id}")
@@ -1670,161 +2047,20 @@ async def delete_prop(script_id: str, prop_id: str):
     script = pipeline.get_script(script_id)
     if not script:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     original_count = len(script.props)
     script.props = [p for p in script.props if p.id != prop_id]
-    
+
     if len(script.props) == original_count:
         raise HTTPException(status_code=404, detail="Prop not found")
-    
+
     # Remove prop references from frames
     for frame in script.frames:
         if prop_id in frame.prop_ids:
             frame.prop_ids.remove(prop_id)
-    
+
     script.updated_at = time.time()
     pipeline._save_data()
-    
-    return {"status": "success", "message": f"Prop {prop_id} deleted"}
 
-
-# --- Frame CRUD ---
-
-class CreateFrameRequest(BaseModel):
-    scene_id: str
-    action_description: str
-    character_ids: List[str] = []
-    prop_ids: List[str] = []
-    dialogue: Optional[str] = None
-    speaker: Optional[str] = None
-    camera_angle: str = "Medium Shot"
-    insert_at: Optional[int] = None  # If None, append to end
-
-@app.post("/projects/{script_id}/frames")
-async def create_frame(script_id: str, request: CreateFrameRequest):
-    """Creates a new frame in the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    import uuid
-    from .models import StoryboardFrame, GenerationStatus
-    
-    new_frame = StoryboardFrame(
-        id=f"frame_{uuid.uuid4().hex[:8]}",
-        scene_id=request.scene_id,
-        character_ids=request.character_ids,
-        prop_ids=request.prop_ids,
-        action_description=request.action_description,
-        dialogue=request.dialogue,
-        speaker=request.speaker,
-        camera_angle=request.camera_angle,
-        status=GenerationStatus.PENDING
-    )
-    
-    # Insert at specified position or append
-    if request.insert_at is not None and 0 <= request.insert_at <= len(script.frames):
-        script.frames.insert(request.insert_at, new_frame)
-    else:
-        script.frames.append(new_frame)
-    
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "frame": new_frame.dict(), "index": script.frames.index(new_frame)}
-
-
-@app.delete("/projects/{script_id}/frames/{frame_id}")
-async def delete_frame(script_id: str, frame_id: str):
-    """Deletes a frame from the project."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    original_count = len(script.frames)
-    script.frames = [f for f in script.frames if f.id != frame_id]
-    
-    if len(script.frames) == original_count:
-        raise HTTPException(status_code=404, detail="Frame not found")
-    
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "message": f"Frame {frame_id} deleted"}
-
-
-class CopyFrameRequest(BaseModel):
-    frame_id: str
-    insert_at: Optional[int] = None
-
-@app.post("/projects/{script_id}/frames/copy")
-async def copy_frame(script_id: str, request: CopyFrameRequest):
-    """Creates a copy of an existing frame."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Find the frame to copy
-    source_frame = next((f for f in script.frames if f.id == request.frame_id), None)
-    if not source_frame:
-        raise HTTPException(status_code=404, detail="Frame not found")
-    
-    import uuid
-    from .models import StoryboardFrame, GenerationStatus
-    
-    # Create a copy with new ID
-    new_frame = StoryboardFrame(
-        id=f"frame_{uuid.uuid4().hex[:8]}",
-        scene_id=source_frame.scene_id,
-        character_ids=source_frame.character_ids.copy(),
-        prop_ids=source_frame.prop_ids.copy(),
-        action_description=source_frame.action_description,
-        dialogue=source_frame.dialogue,
-        speaker=source_frame.speaker,
-        camera_angle=source_frame.camera_angle,
-        image_prompt=source_frame.image_prompt,
-        status=GenerationStatus.PENDING  # Reset status for new frame
-    )
-    
-    # Insert at specified position or after source frame
-    if request.insert_at is not None and 0 <= request.insert_at <= len(script.frames):
-        script.frames.insert(request.insert_at, new_frame)
-    else:
-        source_index = script.frames.index(source_frame)
-        script.frames.insert(source_index + 1, new_frame)
-    
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "frame": new_frame.dict(), "index": script.frames.index(new_frame)}
-
-
-class ReorderFramesRequest(BaseModel):
-    frame_ids: List[str]  # New order of frame IDs
-
-@app.put("/projects/{script_id}/frames/reorder")
-async def reorder_frames(script_id: str, request: ReorderFramesRequest):
-    """Reorders frames according to the provided ID list."""
-    script = pipeline.get_script(script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Create a lookup dict for existing frames
-    frame_lookup = {f.id: f for f in script.frames}
-    
-    # Validate all IDs exist
-    for frame_id in request.frame_ids:
-        if frame_id not in frame_lookup:
-            raise HTTPException(status_code=400, detail=f"Frame {frame_id} not found")
-    
-    # Check if all frames are accounted for
-    if set(request.frame_ids) != set(frame_lookup.keys()):
-        raise HTTPException(status_code=400, detail="Frame ID list must contain all existing frames")
-    
-    # Reorder frames
-    script.frames = [frame_lookup[fid] for fid in request.frame_ids]
-    script.updated_at = time.time()
-    pipeline._save_data()
-    
-    return {"status": "success", "message": "Frames reordered", "frame_count": len(script.frames)}
+    return signed_response(script)
 

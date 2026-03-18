@@ -140,6 +140,9 @@ class Character(BaseModel):
     base_character_id: Optional[str] = Field(None, description="ID of the base character if this is a variant")
     voice_id: Optional[str] = Field(None, description="ID of the voice model to use")
     voice_name: Optional[str] = Field(None, description="Human-readable name of the voice")
+    voice_speed: float = Field(1.0, description="Default speech rate (0.5-2.0)")
+    voice_pitch: float = Field(1.0, description="Default pitch rate (0.5-2.0)")
+    voice_volume: int = Field(50, description="Default volume (0-100)")
     locked: bool = Field(False, description="Whether this asset is locked from regeneration")
     status: GenerationStatus = GenerationStatus.PENDING
 
@@ -219,6 +222,7 @@ class StoryboardFrame(BaseModel):
     video_url: Optional[str] = Field(None, description="URL of the generated video clip")
     
     audio_url: Optional[str] = Field(None, description="URL of the generated dialogue audio")
+    audio_error: Optional[str] = Field(None, description="Audio generation error message")
     sfx_url: Optional[str] = Field(None, description="URL of the generated sound effect")
     
     selected_video_id: Optional[str] = Field(None, description="ID of the selected VideoTask for this frame")
@@ -244,6 +248,12 @@ class ArtDirection(BaseModel):
     custom_styles: List[Dict[str, Any]] = Field(default_factory=list, description="User-created custom styles")
     ai_recommendations: List[Dict[str, Any]] = Field(default_factory=list, description="AI recommended styles")
 
+class PromptConfig(BaseModel):
+    """Custom system prompts for polish/refine stages. Empty string = use system default."""
+    storyboard_polish: str = Field("", description="Custom system prompt for storyboard polish (Prompt C)")
+    video_polish: str = Field("", description="Custom system prompt for video I2V polish (Prompt D)")
+    r2v_polish: str = Field("", description="Custom system prompt for video R2V polish (Prompt E)")
+
 class Script(BaseModel):
     id: str = Field(..., description="Unique identifier for the script project")
     title: str = Field(..., description="Title of the comic/video")
@@ -264,9 +274,43 @@ class Script(BaseModel):
     
     # Model Settings for each generation stage
     model_settings: ModelSettings = Field(default_factory=ModelSettings, description="Model selection for T2I/I2I/I2V")
-    
+
+    # Custom prompt configuration for polish stages
+    prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Custom system prompts for polish stages")
+
     # Merged video URL
     merged_video_url: Optional[str] = Field(None, description="URL of the merged final video")
-    
+
+    # Series association
+    series_id: Optional[str] = Field(None, description="ID of the parent Series, None for standalone projects")
+    episode_number: Optional[int] = Field(None, description="Episode number within the Series")
+
+    created_at: float
+    updated_at: float
+
+
+class Series(BaseModel):
+    """A Series groups multiple Episodes with shared assets and configuration."""
+    id: str = Field(..., description="Unique identifier for the series")
+    title: str = Field(..., description="Title of the series")
+    description: str = Field("", description="Series description/synopsis")
+
+    # Shared asset library
+    characters: List[Character] = Field(default_factory=list, description="Shared character assets")
+    scenes: List[Scene] = Field(default_factory=list, description="Shared scene assets")
+    props: List[Prop] = Field(default_factory=list, description="Shared prop assets")
+
+    # Unified visual style
+    art_direction: Optional[ArtDirection] = Field(None, description="Series-level art direction")
+
+    # Series-level prompt configuration
+    prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Series-level custom prompts")
+
+    # Model settings
+    model_settings: ModelSettings = Field(default_factory=ModelSettings, description="Series-level model settings")
+
+    # Episode references
+    episode_ids: List[str] = Field(default_factory=list, description="Ordered list of Episode/Script IDs")
+
     created_at: float
     updated_at: float

@@ -311,6 +311,16 @@ export const api = {
         return res.data;
     },
 
+    getPromptConfig: async (scriptId: string) => {
+        const res = await axios.get(`${API_URL}/projects/${scriptId}/prompt_config`);
+        return res.data;
+    },
+
+    updatePromptConfig: async (scriptId: string, config: { storyboard_polish?: string; video_polish?: string; r2v_polish?: string }) => {
+        const res = await axios.put(`${API_URL}/projects/${scriptId}/prompt_config`, config);
+        return res.data;
+    },
+
     selectVideo: async (scriptId: string, frameId: string, videoId: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/${frameId}/select_video`, {
             video_id: videoId
@@ -347,16 +357,20 @@ export const api = {
     },
 
     // NOTE: polishPrompt removed - use refineFramePrompt for storyboard prompts
-    polishVideoPrompt: async (draftPrompt: string) => {
+    polishVideoPrompt: async (draftPrompt: string, feedback: string = "", scriptId: string = "") => {
         const res = await axios.post(`${API_URL}/video/polish_prompt`, {
-            draft_prompt: draftPrompt
+            draft_prompt: draftPrompt,
+            feedback: feedback,
+            script_id: scriptId,
         });
         return res.data;
     },
-    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[]) => {
+    polishR2VPrompt: async (draftPrompt: string, slots: { description: string }[], feedback: string = "", scriptId: string = "") => {
         const res = await axios.post(`${API_URL}/video/polish_r2v_prompt`, {
             draft_prompt: draftPrompt,
-            slots: slots
+            slots: slots,
+            feedback: feedback,
+            script_id: scriptId,
         });
         return res.data;
     },
@@ -435,11 +449,12 @@ export const api = {
      * Refines a raw prompt into bilingual (CN/EN) prompts using AI.
      * Returns { prompt_cn, prompt_en, frame_updated }.
      */
-    refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = []) => {
+    refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = [], feedback: string = "") => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/refine_prompt`, {
             frame_id: frameId,
             raw_prompt: rawPrompt,
-            assets: assets
+            assets: assets,
+            feedback: feedback
         });
         return res.data;
     },
@@ -473,13 +488,23 @@ export const api = {
         return response.json();
     },
 
-    generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number) => {
+    generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number, volume: number = 50) => {
         const response = await fetch(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ speed, pitch }),
+            body: JSON.stringify({ speed, pitch, volume }),
         });
         if (!response.ok) throw new Error("Failed to generate line audio");
+        return response.json();
+    },
+
+    updateVoiceParams: async (scriptId: string, charId: string, speed: number, pitch: number, volume: number) => {
+        const response = await fetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ speed, pitch, volume }),
+        });
+        if (!response.ok) throw new Error("Failed to update voice params");
         return response.json();
     },
 
@@ -529,6 +554,103 @@ export const api = {
             throw new Error(errorData.detail || "Failed to upload frame image");
         }
         return response.json();
+    },
+
+    // ============================================
+    // Series APIs
+    // ============================================
+
+    // Series CRUD
+    createSeries: async (title: string, description?: string) => {
+        const response = await axios.post(`${API_URL}/series`, { title, description });
+        return response.data;
+    },
+    listSeries: async () => {
+        const response = await axios.get(`${API_URL}/series`);
+        return response.data;
+    },
+    getSeries: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}`);
+        return response.data;
+    },
+    updateSeries: async (seriesId: string, data: { title?: string; description?: string }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}`, data);
+        return response.data;
+    },
+    deleteSeries: async (seriesId: string) => {
+        const response = await axios.delete(`${API_URL}/series/${seriesId}`);
+        return response.data;
+    },
+
+    // Series Episodes
+    getSeriesEpisodes: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/episodes`);
+        return response.data;
+    },
+    addEpisodeToSeries: async (seriesId: string, scriptId: string, episodeNumber?: number) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/episodes`, { script_id: scriptId, episode_number: episodeNumber });
+        return response.data;
+    },
+    removeEpisodeFromSeries: async (seriesId: string, scriptId: string) => {
+        const response = await axios.delete(`${API_URL}/series/${seriesId}/episodes/${scriptId}`);
+        return response.data;
+    },
+
+    // Series Assets
+    getSeriesAssets: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/assets`);
+        return response.data;
+    },
+    importSeriesAssets: async (seriesId: string, sourceSeriesId: string, assetIds: string[]) => {
+        const response = await axios.post(`${API_URL}/series/${seriesId}/assets/import`, { source_series_id: sourceSeriesId, asset_ids: assetIds });
+        return response.data;
+    },
+
+    // Series Prompt Config
+    getSeriesPromptConfig: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/prompt_config`);
+        return response.data;
+    },
+    updateSeriesPromptConfig: async (seriesId: string, config: { storyboard_polish?: string; video_polish?: string; r2v_polish?: string }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/prompt_config`, config);
+        return response.data;
+    },
+    getSeriesModelSettings: async (seriesId: string) => {
+        const response = await axios.get(`${API_URL}/series/${seriesId}/model_settings`);
+        return response.data;
+    },
+    updateSeriesModelSettings: async (seriesId: string, settings: {
+        t2i_model?: string;
+        i2i_model?: string;
+        i2v_model?: string;
+        character_aspect_ratio?: string;
+        scene_aspect_ratio?: string;
+        prop_aspect_ratio?: string;
+        storyboard_aspect_ratio?: string;
+    }) => {
+        const response = await axios.put(`${API_URL}/series/${seriesId}/model_settings`, settings);
+        return response.data;
+    },
+
+    // Helper: create a project and add it as an episode to a series
+    createEpisodeForSeries: async (seriesId: string, title: string, episodeNumber: number) => {
+        const project = await api.createProject(title, "", true);
+        await api.addEpisodeToSeries(seriesId, project.id, episodeNumber);
+        return project;
+    },
+
+    // File Import
+    importFilePreview: async (file: File, suggestedEpisodes: number = 3) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await axios.post(`${API_URL}/series/import/preview?suggested_episodes=${suggestedEpisodes}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+    },
+    importFileConfirm: async (data: { title: string; description?: string; text: string; episodes: any[] }) => {
+        const response = await axios.post(`${API_URL}/series/import/confirm`, data);
+        return response.data;
     },
 };
 

@@ -22,6 +22,110 @@ from ...utils import get_logger
 
 logger = get_logger(__name__)
 
+# ── Default system prompts for polish/refine stages ──────────────────────
+# These are the built-in defaults. Users can override per-project via PromptConfig.
+# Placeholders: {ASSETS} = asset context, {DRAFT} = draft prompt, {SLOTS} = R2V slot context
+
+DEFAULT_STORYBOARD_POLISH_PROMPT = """
+# ROLE
+You are an expert storyboard artist and prompt engineer. Your task is to rewrite a draft prompt into a high-quality image generation prompt, specifically for a multi-reference image workflow.
+
+# CONTEXT:
+The user has selected specific reference images (assets) to compose a scene.
+You must refer to these assets by their Image ID (e.g., "Image 1", "Image 2") when describing them in the prompt.
+
+# AVAILABLE ASSETS:
+{ASSETS}
+
+# RULES:
+1.  **Integrate Assets**: Explicitly mention "Image X" when describing the corresponding character, scene, or prop.
+2.  **Natural Flow**: Do not just concatenate. Write a coherent sentence or paragraph describing the visual scene.
+3.  **Strict Adherence**: DO NOT hallucinate emotions, actions, or plot details not present in the draft. If the draft says "sitting", do NOT add "sadly" or "happily" unless specified. Keep the narrative neutral and accurate.
+4.  **Enhance Detail**: Add visual details (lighting, atmosphere, emotion) based on the draft prompt, but keep the asset references clear.
+5.  **No Explanations**: Return ONLY the polished prompt text.
+6.  **Bilingual Output**:
+    - **Prompt CN**: Fluent Chinese, strictly following the content of the draft.
+    - **Prompt EN**: Natural English description, prioritizing visual atmosphere.
+
+# OUTPUT FORMAT
+Return STRICTLY a JSON object:
+{{
+    "prompt_cn": "Chinese description with Image X references...",
+    "prompt_en": "English cinematic description with Image X references..."
+}}
+
+# EXAMPLES
+**Input Draft**: Boy (Image 1) sitting on hospital bed (Image 2).
+**Output**:
+{{
+    "prompt_cn": "图像1中的男孩坐在图像2的病床边缘。病房内光线柔和，自然光从侧面照射在男孩身上，勾勒出真实的轮廓。画面构图稳定，质感写实。",
+    "prompt_en": "The boy from Image 1 is seated on the edge of the hospital bed in Image 2. Soft natural light illuminates the scene from the side, highlighting the fabric textures of the bedding and the realistic skin tone of the boy. Cinematic composition, high resolution, photorealistic."
+}}
+
+# USER DRAFT PROMPT
+{DRAFT}
+""".strip()
+
+DEFAULT_VIDEO_POLISH_PROMPT = """You are an expert video prompt engineer. Your task is to optimize a draft prompt for an Image-to-Video generation model.
+
+GUIDELINES:
+1.  **Structure**: Prompt = Motion Description + Camera Movement.
+2.  **Motion Description**: Describe the dynamic action of elements (characters, objects) in the image. Use adjectives to control speed and intensity (e.g., "slowly", "rapidly", "subtle").
+3.  **Camera Movement**: Explicitly state camera moves if needed (e.g., "Zoom in", "Pan left", "Static camera").
+4.  **Clarity**: Be concise but descriptive. Focus on visual movement.
+
+EXAMPLES:
+
+*   **Zoom Out**: "A soft, round animated character with a curious expression wakes up to find their bed is a giant golden corn kernel. Camera zooms out to reveal the room is a massive corn silo, with echoes reverberating, corn kernels piled high like walls, and a beam of warm sunlight streaming from a high window, casting long shadows."
+*   **Pan Left**: "Camera pans left, slowly sweeping across a luxury store window filled with glamorous models and expensive goods. The camera continues panning left, leaving the window to reveal a ragged homeless man shivering in the corner of the adjacent alley."
+
+TASK:
+Rewrite the following draft prompt into a high-quality video generation prompt following the guidelines above.
+
+OUTPUT FORMAT:
+Return STRICTLY a JSON object:
+{{
+    "prompt_cn": "润色后的中文视频提示词，关注运动和镜头",
+    "prompt_en": "Polished English video prompt, focusing on motion and camera"
+}}"""
+
+DEFAULT_R2V_POLISH_PROMPT = """# Role
+You are a prompt engineer for the Wan 2.6 Reference-to-Video model.
+
+# Context
+The R2V (Reference-to-Video) model generates video clips by combining reference character videos with a text prompt.
+The user has uploaded the following reference videos:
+{SLOTS}
+
+# Task
+Rewrite the user's input prompt into a structured format strictly following these rules:
+
+1. **REPLACE character names with their ID**: Use "character1" for the first character, "character2" for the second, "character3" for the third.
+2. **STRUCTURE**: Use this format:
+   - Scene setup (environment, lighting, mood)
+   - Character action (what character1/character2/character3 are doing, their expressions, movements)
+   - Camera movement (if applicable)
+3. **DIALOGUE FORMAT**: If the prompt includes dialogue, format it as: 'character1 says: "dialogue content"'
+4. **PRESERVE**: Keep the original intent and emotional tone.
+5. **ENHANCE**: Add visual details for dramatic effect (lighting, speed descriptors like "slowly", "rapidly").
+
+# Output Format
+Return STRICTLY a JSON object:
+{{
+    "prompt_cn": "润色后的中文提示词，使用 character1/character2/character3 格式",
+    "prompt_en": "Polished English prompt using character1/character2/character3 format"
+}}
+
+# Examples
+
+INPUT: 主角从门里跳出来说话
+SLOTS: character1 = "White rabbit", character2 = "Robot dog"
+OUTPUT:
+{{
+    "prompt_cn": "character1 从门里猛然跳出，落地时耳朵竖起，充满活力。房间昏暗，温暖的光线从尘土飞扬的窗户中透入。character1 兴奋地环顾四周说道：'我正好赶上了！' 镜头随着跳跃略微倾斜。",
+    "prompt_en": "character1 bursts through the door with an exaggerated jump, landing energetically with ears perked up. The room is dimly lit with warm ambient light streaming through dusty windows. character1 looks around excitedly and says: 'I made it just in time!' Camera follows the jump with a slight tilt."
+}}""".strip()
+
 class ScriptProcessor:
     def __init__(self, api_key: str = None):
         self._api_key = api_key
@@ -207,6 +311,63 @@ class ScriptProcessor:
             created_at=time.time(),
             updated_at=time.time()
         )
+
+    def split_into_episodes(self, text: str, suggested_episodes: int = 3) -> List[Dict[str, Any]]:
+        """
+        Uses LLM to split a long text into episodes by narrative rhythm.
+        Returns a list of episode dicts with title, summary, start/end markers, etc.
+        """
+        if not self.is_configured:
+            raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
+
+        MAX_TEXT_LENGTH = 80000
+        if len(text) > MAX_TEXT_LENGTH:
+            text = text[:MAX_TEXT_LENGTH] + "\n\n[文本已截断，请基于已有内容进行划分]"
+
+        prompt = f"""你是一名专业的剧本编剧和分集策划师。
+
+请将以下小说/剧本文本按叙事节奏划分为约 {suggested_episodes} 集。
+
+划分原则：
+1. 每集应有完整的叙事弧（开端/发展/高潮或悬念）
+2. 在自然的情节转折点或场景切换处分集
+3. 各集内容量大致均衡，但优先保证叙事完整性
+4. 实际集数可以在建议集数 ±2 范围内浮动
+
+输出纯 JSON（不要 markdown 代码块）:
+{{
+  "episodes": [
+    {{
+      "episode_number": 1,
+      "title": "集标题",
+      "summary": "50字以内的内容摘要",
+      "start_marker": "该集起始的原文前20字",
+      "end_marker": "该集结束的原文后20字",
+      "estimated_duration": "预估时长（分钟）"
+    }}
+  ]
+}}
+
+原文如下：
+
+{text}"""
+
+        try:
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = _strip_markdown_json(content)
+            data = json.loads(content)
+            episodes = data.get("episodes", [])
+            if not episodes:
+                raise RuntimeError("LLM 未返回任何分集数据")
+            return episodes
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"LLM 返回的分集数据格式错误: {e}")
+        except ValueError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"分集划分失败: {str(e)}")
 
     def _mock_parse(self, title: str, text: str) -> Script:
         # ... (Existing mock logic moved here) ...
@@ -710,15 +871,15 @@ Props:
             }
         ]
 
-    def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]]) -> Dict[str, str]:
+    def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
         """
         Polishes the storyboard prompt using Qwen-Plus, incorporating asset references.
         Returns a dict with 'prompt_cn' and 'prompt_en'.
         """
         logger.debug(f"Polishing prompt: {draft_prompt}")
-        
+
         fallback_result = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
-        
+
         if not self.is_configured:
              return fallback_result
 
@@ -730,52 +891,26 @@ Props:
             desc = asset.get('description', '')
             # Map index to "Image X"
             asset_context.append(f"Image {i+1}: {asset_type} - {name} ({desc})")
-            
+
         context_str = "\n".join(asset_context)
-        
-        system_prompt = f"""
-# ROLE
-You are an expert storyboard artist and prompt engineer. Your task is to rewrite a draft prompt into a high-quality image generation prompt, specifically for a multi-reference image workflow.
 
-# CONTEXT:
-The user has selected specific reference images (assets) to compose a scene.
-You must refer to these assets by their Image ID (e.g., "Image 1", "Image 2") when describing them in the prompt.
+        # Use custom prompt or default, substituting placeholders
+        template = custom_system_prompt.strip() if custom_system_prompt and custom_system_prompt.strip() else DEFAULT_STORYBOARD_POLISH_PROMPT
+        system_prompt = template.replace("{ASSETS}", context_str).replace("{DRAFT}", draft_prompt)
 
-# AVAILABLE ASSETS:
-{context_str}
+        # Build user message with optional feedback (injected in user content, not system prompt)
+        user_content = system_prompt
+        if feedback and feedback.strip():
+            user_content += f"""
+[用户反馈]
+{feedback.strip()}
 
-# RULES:
-1.  **Integrate Assets**: Explicitly mention "Image X" when describing the corresponding character, scene, or prop.
-2.  **Natural Flow**: Do not just concatenate. Write a coherent sentence or paragraph describing the visual scene.
-3.  **Strict Adherence**: DO NOT hallucinate emotions, actions, or plot details not present in the draft. If the draft says "sitting", do NOT add "sadly" or "happily" unless specified. Keep the narrative neutral and accurate.
-4.  **Enhance Detail**: Add visual details (lighting, atmosphere, emotion) based on the draft prompt, but keep the asset references clear.
-5.  **No Explanations**: Return ONLY the polished prompt text.
-6.  **Bilingual Output**: 
-    - **Prompt CN**: Fluent Chinese, strictly following the content of the draft.
-    - **Prompt EN**: Natural English description, prioritizing visual atmosphere.
-
-# OUTPUT FORMAT
-Return STRICTLY a JSON object:
-{{
-    "prompt_cn": "Chinese description with Image X references...",
-    "prompt_en": "English cinematic description with Image X references..."
-}}
-
-# EXAMPLES
-**Input Draft**: Boy (Image 1) sitting on hospital bed (Image 2).
-**Output**:
-{{
-    "prompt_cn": "图像1中的男孩坐在图像2的病床边缘。病房内光线柔和，自然光从侧面照射在男孩身上，勾勒出真实的轮廓。画面构图稳定，质感写实。",
-    "prompt_en": "The boy from Image 1 is seated on the edge of the hospital bed in Image 2. Soft natural light illuminates the scene from the side, highlighting the fabric textures of the bedding and the realistic skin tone of the boy. Cinematic composition, high resolution, photorealistic."
-}}
-
-# USER DRAFT PROMPT
-{draft_prompt}
+请根据用户反馈修改提示词，只修改用户指出的问题，保持其他部分不变。
 """
 
         try:
             content = self.llm.chat(
-                messages=[{"role": "user", "content": system_prompt}],
+                messages=[{"role": "user", "content": user_content}],
                 response_format={'type': 'json_object'},
             ).strip()
             logger.debug(f"Polished Prompt Raw: {content}")
@@ -799,45 +934,34 @@ Return STRICTLY a JSON object:
         except Exception as e:
             logger.error(f"Error polishing prompt: {e}", exc_info=True)
             return fallback_result
-    def polish_video_prompt(self, draft_prompt: str) -> Dict[str, str]:
+    def polish_video_prompt(self, draft_prompt: str, feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
         """
         Polishes a video generation prompt using Qwen-Plus.
         Returns bilingual prompts {prompt_cn, prompt_en}.
         """
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
-        
+
         if not self.is_configured:
             return fallback
 
-        system_prompt = """You are an expert video prompt engineer. Your task is to optimize a draft prompt for an Image-to-Video generation model.
-
-GUIDELINES:
-1.  **Structure**: Prompt = Motion Description + Camera Movement.
-2.  **Motion Description**: Describe the dynamic action of elements (characters, objects) in the image. Use adjectives to control speed and intensity (e.g., "slowly", "rapidly", "subtle").
-3.  **Camera Movement**: Explicitly state camera moves if needed (e.g., "Zoom in", "Pan left", "Static camera").
-4.  **Clarity**: Be concise but descriptive. Focus on visual movement.
-
-EXAMPLES:
-
-*   **Zoom Out**: "A soft, round animated character with a curious expression wakes up to find their bed is a giant golden corn kernel. Camera zooms out to reveal the room is a massive corn silo, with echoes reverberating, corn kernels piled high like walls, and a beam of warm sunlight streaming from a high window, casting long shadows."
-*   **Pan Left**: "Camera pans left, slowly sweeping across a luxury store window filled with glamorous models and expensive goods. The camera continues panning left, leaving the window to reveal a ragged homeless man shivering in the corner of the adjacent alley."
-
-TASK:
-Rewrite the following draft prompt into a high-quality video generation prompt following the guidelines above.
-
-OUTPUT FORMAT:
-Return STRICTLY a JSON object:
-{
-    "prompt_cn": "润色后的中文视频提示词，关注运动和镜头",
-    "prompt_en": "Polished English video prompt, focusing on motion and camera"
-}
-"""
+        system_prompt = custom_system_prompt.strip() if custom_system_prompt and custom_system_prompt.strip() else DEFAULT_VIDEO_POLISH_PROMPT
 
         try:
+            # Build user message with optional feedback
+            user_message = draft_prompt
+            if feedback and feedback.strip():
+                user_message = f"""[当前提示词]
+{draft_prompt}
+
+[用户反馈]
+{feedback.strip()}
+
+请根据用户反馈修改提示词，只修改用户指出的问题，保持其他部分不变。"""
+
             content = self.llm.chat(
                 messages=[
                     {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': draft_prompt}
+                    {'role': 'user', 'content': user_message}
                 ],
                 response_format={'type': 'json_object'},
             ).strip()
@@ -861,14 +985,14 @@ Return STRICTLY a JSON object:
             logger.exception("Failed to polish video prompt")
             return fallback
 
-    def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]]) -> Dict[str, str]:
+    def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
         """
         Polishes a R2V (Reference-to-Video) prompt using Qwen-Plus.
         R2V requires explicit character references using character1, character2, character3 tags.
         Returns bilingual prompts {prompt_cn, prompt_en}.
         """
         fallback = {"prompt_cn": draft_prompt, "prompt_en": draft_prompt}
-        
+
         if not self.is_configured:
             return fallback
 
@@ -879,49 +1003,26 @@ Return STRICTLY a JSON object:
             slot_context.append(f"- {char_id}: {slot['description']}")
         slot_context_str = "\n".join(slot_context) if slot_context else "No reference videos provided."
 
-        system_prompt = f"""# Role
-You are a prompt engineer for the Wan 2.6 Reference-to-Video model.
-
-# Context
-The R2V (Reference-to-Video) model generates video clips by combining reference character videos with a text prompt.
-The user has uploaded the following reference videos:
-{slot_context_str}
-
-# Task
-Rewrite the user's input prompt into a structured format strictly following these rules:
-
-1. **REPLACE character names with their ID**: Use "character1" for the first character, "character2" for the second, "character3" for the third.
-2. **STRUCTURE**: Use this format:
-   - Scene setup (environment, lighting, mood)
-   - Character action (what character1/character2/character3 are doing, their expressions, movements)
-   - Camera movement (if applicable)
-3. **DIALOGUE FORMAT**: If the prompt includes dialogue, format it as: 'character1 says: "dialogue content"'
-4. **PRESERVE**: Keep the original intent and emotional tone.
-5. **ENHANCE**: Add visual details for dramatic effect (lighting, speed descriptors like "slowly", "rapidly").
-
-# Output Format
-Return STRICTLY a JSON object:
-{{
-    "prompt_cn": "润色后的中文提示词，使用 character1/character2/character3 格式",
-    "prompt_en": "Polished English prompt using character1/character2/character3 format"
-}}
-
-# Examples
-
-INPUT: 主角从门里跳出来说话
-SLOTS: character1 = "White rabbit", character2 = "Robot dog"
-OUTPUT:
-{{
-    "prompt_cn": "character1 从门里猛然跳出，落地时耳朵竖起，充满活力。房间昏暗，温暖的光线从尘土飞扬的窗户中透入。character1 兴奋地环顾四周说道：'我正好赶上了！' 镜头随着跳跃略微倾斜。",
-    "prompt_en": "character1 bursts through the door with an exaggerated jump, landing energetically with ears perked up. The room is dimly lit with warm ambient light streaming through dusty windows. character1 looks around excitedly and says: 'I made it just in time!' Camera follows the jump with a slight tilt."
-}}
-"""
+        # Use custom prompt or default, substituting {SLOTS} placeholder
+        template = custom_system_prompt.strip() if custom_system_prompt and custom_system_prompt.strip() else DEFAULT_R2V_POLISH_PROMPT
+        system_prompt = template.replace("{SLOTS}", slot_context_str)
 
         try:
+            # Build user message with optional feedback
+            user_message = draft_prompt
+            if feedback and feedback.strip():
+                user_message = f"""[当前提示词]
+{draft_prompt}
+
+[用户反馈]
+{feedback.strip()}
+
+请根据用户反馈修改提示词，只修改用户指出的问题，保持其他部分不变。"""
+
             content = self.llm.chat(
                 messages=[
                     {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': draft_prompt}
+                    {'role': 'user', 'content': user_message}
                 ],
                 response_format={'type': 'json_object'},
             ).strip()

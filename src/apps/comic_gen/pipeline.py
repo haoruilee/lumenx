@@ -8,7 +8,7 @@ import subprocess
 import threading
 import platform
 from urllib.parse import quote
-from .models import Script, GenerationStatus, VideoTask, Character, Scene, StoryboardFrame
+from .models import Script, GenerationStatus, VideoTask, Character, Scene, StoryboardFrame, Series, PromptConfig
 from .llm import ScriptProcessor
 from .assets import AssetGenerator
 from .storyboard import StoryboardGenerator
@@ -57,13 +57,17 @@ class ComicGenPipeline:
         self.export_manager = ExportManager(self.config.get('export'))
         
         self.data_file = "output/projects.json"
-        self._save_lock = threading.Lock()  # Lock to prevent concurrent file writes
+        self.series_data_file = "output/series.json"
+        self._save_lock = threading.RLock()  # Reentrant lock to prevent concurrent file writes
         self.scripts: Dict[str, Script] = self._load_data()
+        self.series_store: Dict[str, Series] = self._load_series_data()
         
         # Task management for async asset generation
         # Format: { task_id: { status: str, progress: int, error: str, script_id: str, asset_id: str, created_at: float } }
         self.asset_generation_tasks: Dict[str, Dict[str, Any]] = {}
         self.video_generation_tasks: Dict[str, Dict[str, Any]] = {}
+        # Temporary cache for file import previews (import_id -> text)
+        self._import_cache: Dict[str, str] = {}
         # Cached model instances for Kling/Vidu (lazily initialized)
         self._kling_model = None
         self._vidu_model = None
@@ -334,26 +338,30 @@ class ComicGenPipeline:
         if not task:
             logger.error(f"Task {task_id} not found")
             return
-        
+
         task["status"] = "processing"
-        
+
         try:
             params = task["params"]
-            # Call the synchronous generate_asset method
-            self.generate_asset(
-                task["script_id"],
-                task["asset_id"],
-                task["asset_type"],
-                params["style_preset"],
-                params["reference_image_url"],
-                params["style_prompt"],
-                params["generation_type"],
-                params["prompt"],
-                params["apply_style"],
-                params["negative_prompt"],
-                params["batch_size"],
-                params["model_name"]
-            )
+            if task.get("is_series"):
+                # Series asset generation — operate on series_store
+                self._process_series_asset_task(task, params)
+            else:
+                # Project asset generation — existing logic
+                self.generate_asset(
+                    task["script_id"],
+                    task["asset_id"],
+                    task["asset_type"],
+                    params["style_preset"],
+                    params["reference_image_url"],
+                    params["style_prompt"],
+                    params["generation_type"],
+                    params["prompt"],
+                    params["apply_style"],
+                    params["negative_prompt"],
+                    params["batch_size"],
+                    params["model_name"]
+                )
             task["status"] = "completed"
             task["progress"] = 100
             logger.info(f"Task {task_id} completed successfully")
@@ -361,6 +369,54 @@ class ComicGenPipeline:
             task["status"] = "failed"
             task["error"] = str(e)
             logger.error(f"Task {task_id} failed: {e}")
+
+    def _process_series_asset_task(self, task: Dict, params: Dict):
+        """Process a Series asset generation task."""
+        series_id = task["script_id"]  # stored as script_id for compatibility
+        series = self.series_store.get(series_id)
+        if not series:
+            raise ValueError("Series not found")
+
+        asset_id = task["asset_id"]
+        asset_type = task["asset_type"]
+        positive_prompt = params.get("effective_positive_prompt", "")
+        negative_prompt = params.get("effective_negative_prompt", "")
+        t2i_model = params.get("t2i_model", "wan2.6-t2i")
+        effective_size = params.get("effective_size", "576*1024")
+        batch_size = params.get("batch_size", 1)
+        generation_type = params.get("generation_type", "all")
+        prompt = params.get("prompt")
+        reference_image_url = params.get("reference_image_url")
+
+        if asset_type == "character":
+            target = next((c for c in series.characters if c.id == asset_id), None)
+            if not target:
+                raise ValueError(f"Character {asset_id} not found in series")
+            self.asset_generator.generate_character(
+                target, generation_type=generation_type, prompt=prompt or "",
+                positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                batch_size=batch_size, model_name=t2i_model, size=effective_size,
+            )
+        elif asset_type == "scene":
+            target = next((s for s in series.scenes if s.id == asset_id), None)
+            if not target:
+                raise ValueError(f"Scene {asset_id} not found in series")
+            self.asset_generator.generate_scene(
+                target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                batch_size=batch_size, model_name=t2i_model, size=effective_size,
+            )
+        elif asset_type == "prop":
+            target = next((p for p in series.props if p.id == asset_id), None)
+            if not target:
+                raise ValueError(f"Prop {asset_id} not found in series")
+            self.asset_generator.generate_prop(
+                target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                batch_size=batch_size, model_name=t2i_model, size=effective_size,
+            )
+        else:
+            raise ValueError(f"Unknown asset type: {asset_type}")
+
+        self._save_series_data()
 
     def get_asset_generation_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Returns the status of an asset generation task."""
@@ -791,49 +847,55 @@ class ComicGenPipeline:
             raise ValueError("Script not found")
         
         logger.info(f"Analyzing text to frames for project {script_id}")
-        
-        # Build entities JSON from existing characters, scenes, props
+
+        # Resolve assets (merge Series + Episode if applicable)
+        resolved = self.resolve_episode_assets(script)
+        all_characters = resolved["characters"]
+        all_scenes = resolved["scenes"]
+        all_props = resolved["props"]
+
+        # Build entities JSON from resolved characters, scenes, props
         entities_json = {
-            "characters": [{"id": c.id, "name": c.name, "description": c.description} for c in script.characters],
-            "scenes": [{"id": s.id, "name": s.name, "description": s.description} for s in script.scenes],
-            "props": [{"id": p.id, "name": p.name, "description": p.description} for p in script.props],
+            "characters": [{"id": c.id, "name": c.name, "description": c.description} for c in all_characters],
+            "scenes": [{"id": s.id, "name": s.name, "description": s.description} for s in all_scenes],
+            "props": [{"id": p.id, "name": p.name, "description": p.description} for p in all_props],
         }
-        
+
         # Call LLM to analyze text (may raise RuntimeError on parse failure)
         raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
 
         if not raw_frames:
             raise RuntimeError("AI 分镜分析未返回任何帧数据，请重试。")
-        
+
         # Convert raw frame dicts to StoryboardFrame objects
         new_frames = []
         for idx, frame_data in enumerate(raw_frames):
             # Resolve scene ID by name
             scene_ref_name = frame_data.get("scene_ref_name", "")
             scene_id = None
-            for scene in script.scenes:
+            for scene in all_scenes:
                 if scene.name == scene_ref_name or scene_ref_name in scene.name:
                     scene_id = scene.id
                     break
-            if not scene_id and script.scenes:
-                scene_id = script.scenes[0].id  # Fallback to first scene
+            if not scene_id and all_scenes:
+                scene_id = all_scenes[0].id  # Fallback to first scene
             elif not scene_id:
                 scene_id = str(uuid.uuid4())  # Generate a placeholder ID
-            
+
             # Resolve character IDs by names
             char_ref_names = frame_data.get("character_ref_names", [])
             character_ids = []
             for char_name in char_ref_names:
-                for char in script.characters:
+                for char in all_characters:
                     if char.name == char_name or char_name in char.name:
                         character_ids.append(char.id)
                         break
-            
+
             # Resolve prop IDs by names
             prop_ref_names = frame_data.get("prop_ref_names", [])
             prop_ids = []
             for prop_name in prop_ref_names:
-                for prop in script.props:
+                for prop in all_props:
                     if prop.name == prop_name or prop_name in prop.name:
                         prop_ids.append(prop.id)
                         break
@@ -867,7 +929,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def refine_frame_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def refine_frame_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: List[Dict[str, Any]], feedback: str = "") -> Dict[str, Any]:
         """
         Refines a raw prompt into bilingual (CN/EN) prompts using LLM.
         Also updates the frame with the refined prompts.
@@ -875,11 +937,19 @@ class ComicGenPipeline:
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-        
+
         logger.debug(f"Refining prompt for frame {frame_id}")
-        
+
+        # Read custom prompt config with 3-level fallback (Episode → Series → default)
+        series = self.series_store.get(script.series_id) if script.series_id else None
+        custom_prompt = self.get_effective_prompt("storyboard_polish", script, series)
+        # If it's the system default, pass empty so the LLM method uses its built-in default
+        from .llm import DEFAULT_STORYBOARD_POLISH_PROMPT
+        if custom_prompt == DEFAULT_STORYBOARD_POLISH_PROMPT:
+            custom_prompt = ""
+
         # Call LLM to refine prompt
-        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets)
+        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback, custom_prompt)
         
         # Find and update the frame
         frame_found = False
@@ -2171,7 +2241,12 @@ class ComicGenPipeline:
                     speaker = next((c for c in script.characters if c.id == frame.character_ids[0]), None)
                 
                 if speaker:
-                    self.audio_generator.generate_dialogue(frame, speaker)
+                    self.audio_generator.generate_dialogue(
+                        frame, speaker,
+                        speed=speaker.voice_speed,
+                        pitch=speaker.voice_pitch,
+                        volume=speaker.voice_volume
+                    )
             
             # Generate SFX (Text-to-Audio)
             if frame.action_description:
@@ -2188,7 +2263,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float = 1.0, pitch: float = 1.0) -> Script:
+    def generate_dialogue_line(self, script_id: str, frame_id: str, speed: float = 1.0, pitch: float = 1.0, volume: int = 50) -> Script:
         """Generates audio for a specific line with parameters."""
         script = self.scripts.get(script_id)
         if not script:
@@ -2204,7 +2279,7 @@ class ComicGenPipeline:
                 speaker = next((c for c in script.characters if c.id == frame.character_ids[0]), None)
             
             if speaker:
-                self.audio_generator.generate_dialogue(frame, speaker, speed, pitch)
+                self.audio_generator.generate_dialogue(frame, speaker, speed, pitch, volume)
                 
         self._save_data()
         return script
@@ -2472,6 +2547,431 @@ class ComicGenPipeline:
         
         if not found:
             raise ValueError(f"Variant {variant_id} not found")
-        
+
         self._save_data()
         return script
+
+    # ============================================================
+    # Series Storage & CRUD
+    # ============================================================
+
+    def _load_series_data(self) -> Dict[str, Series]:
+        if not os.path.exists(self.series_data_file):
+            return {}
+        try:
+            with open(self.series_data_file, 'r') as f:
+                data = json.load(f)
+                return {k: Series(**v) for k, v in data.items()}
+        except Exception as e:
+            logger.error(f"Failed to load series data: {e}")
+            return {}
+
+    def _save_series_data_unlocked(self):
+        """Save series data without acquiring the lock (caller must hold self._save_lock)."""
+        try:
+            os.makedirs(os.path.dirname(self.series_data_file) or ".", exist_ok=True)
+            with open(self.series_data_file, 'w') as f:
+                json.dump({k: v.model_dump() for k, v in self.series_store.items()}, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save series data: {e}")
+
+    def _save_series_data(self):
+        """Save series data with thread lock."""
+        with self._save_lock:
+            self._save_series_data_unlocked()
+
+    def create_series(self, title: str, description: str = "") -> Series:
+        """Create a new Series."""
+        with self._save_lock:
+            series = Series(
+                id=str(uuid.uuid4()),
+                title=title,
+                description=description,
+                created_at=time.time(),
+                updated_at=time.time(),
+            )
+            self.series_store[series.id] = series
+            self._save_series_data_unlocked()
+            return series
+
+    def get_series(self, series_id: str) -> Optional[Series]:
+        return self.series_store.get(series_id)
+
+    def list_series(self) -> List[Series]:
+        return list(self.series_store.values())
+
+    def update_series(self, series_id: str, updates: Dict[str, Any]) -> Series:
+        """Update Series fields (title, description, etc.)."""
+        with self._save_lock:
+            series = self.series_store.get(series_id)
+            if not series:
+                raise ValueError("Series not found")
+            for key, value in updates.items():
+                if hasattr(series, key) and key not in ("id", "created_at", "episode_ids"):
+                    setattr(series, key, value)
+            series.updated_at = time.time()
+            self.series_store[series_id] = series
+            self._save_series_data_unlocked()
+            return series
+
+    def delete_series(self, series_id: str) -> None:
+        """Delete a Series and disassociate its episodes."""
+        with self._save_lock:
+            series = self.series_store.get(series_id)
+            if not series:
+                raise ValueError("Series not found")
+            # Disassociate episodes
+            for ep_id in series.episode_ids:
+                script = self.scripts.get(ep_id)
+                if script:
+                    script.series_id = None
+                    script.episode_number = None
+            self._save_data()
+            del self.series_store[series_id]
+            self._save_series_data_unlocked()
+
+    def add_episode_to_series(self, series_id: str, script_id: str, episode_number: Optional[int] = None) -> Series:
+        """Add an existing Script/Project as an Episode to a Series."""
+        with self._save_lock:
+            series = self.series_store.get(series_id)
+            if not series:
+                raise ValueError("Series not found")
+            script = self.scripts.get(script_id)
+            if not script:
+                raise ValueError("Script not found")
+            # If script already belongs to another series, remove it from the old one
+            if script.series_id and script.series_id != series_id:
+                old_series = self.series_store.get(script.series_id)
+                if old_series and script_id in old_series.episode_ids:
+                    old_series.episode_ids.remove(script_id)
+            if script_id not in series.episode_ids:
+                series.episode_ids.append(script_id)
+            script.series_id = series_id
+            script.episode_number = episode_number or len(series.episode_ids)
+            series.updated_at = time.time()
+            self._save_data()
+            self._save_series_data_unlocked()
+            return series
+
+    def remove_episode_from_series(self, series_id: str, script_id: str) -> Series:
+        """Remove an Episode from a Series (does not delete the project)."""
+        with self._save_lock:
+            series = self.series_store.get(series_id)
+            if not series:
+                raise ValueError("Series not found")
+            if script_id in series.episode_ids:
+                series.episode_ids.remove(script_id)
+            script = self.scripts.get(script_id)
+            if script:
+                script.series_id = None
+                script.episode_number = None
+            series.updated_at = time.time()
+            self._save_data()
+            self._save_series_data_unlocked()
+            return series
+
+    def get_series_episodes(self, series_id: str) -> List[Script]:
+        """Get all Episodes belonging to a Series, in order."""
+        series = self.series_store.get(series_id)
+        if not series:
+            raise ValueError("Series not found")
+        episodes = []
+        for ep_id in series.episode_ids:
+            script = self.scripts.get(ep_id)
+            if script:
+                episodes.append(script)
+        return episodes
+
+    def resolve_episode_assets(self, episode: Script, series: Optional[Series] = None) -> Dict[str, List]:
+        """Merge Episode-local assets with Series shared assets.
+        Episode-local assets take priority (by ID) over Series assets."""
+        if not series:
+            # Auto-lookup series if episode has series_id
+            if episode.series_id:
+                series = self.series_store.get(episode.series_id)
+        if not series:
+            return {
+                "characters": episode.characters,
+                "scenes": episode.scenes,
+                "props": episode.props,
+            }
+        # Build lookup by ID for episode-local assets
+        ep_char_ids = {c.id for c in episode.characters}
+        ep_scene_ids = {s.id for s in episode.scenes}
+        ep_prop_ids = {p.id for p in episode.props}
+
+        merged_characters = list(episode.characters) + [c for c in series.characters if c.id not in ep_char_ids]
+        merged_scenes = list(episode.scenes) + [s for s in series.scenes if s.id not in ep_scene_ids]
+        merged_props = list(episode.props) + [p for p in series.props if p.id not in ep_prop_ids]
+
+        return {
+            "characters": merged_characters,
+            "scenes": merged_scenes,
+            "props": merged_props,
+        }
+
+    # ============================================================
+    # File Import & Episode Splitting
+    # ============================================================
+
+    def import_file_and_split(self, text: str, suggested_episodes: int = 3) -> List[Dict]:
+        """Split text into episodes using LLM. Returns episode preview data."""
+        return self.script_processor.split_into_episodes(text, suggested_episodes)
+
+    def create_series_from_import(self, title: str, text: str, episodes_data: List[Dict],
+                                   description: str = "") -> Dict:
+        """Create a Series with Episodes from import data.
+        episodes_data: list of dicts with episode_number, title, start_marker, end_marker."""
+        # Create the Series (already acquires lock internally)
+        series = self.create_series(title, description)
+
+        # Split text into episode chunks based on markers
+        episode_texts = self._split_text_by_markers(text, episodes_data)
+
+        with self._save_lock:
+            # Create Episode (Script) for each chunk
+            created_episodes = []
+            for idx, ep_data in enumerate(episodes_data):
+                ep_text = episode_texts[idx] if idx < len(episode_texts) else ""
+                ep_title = ep_data.get("title", f"第{idx+1}集")
+                episode_number = ep_data.get("episode_number", idx + 1)
+
+                # Create draft script (no LLM analysis yet — user can trigger later)
+                script = self.script_processor.create_draft_script(ep_title, ep_text)
+                script.series_id = series.id
+                script.episode_number = episode_number
+                self.scripts[script.id] = script
+
+                series.episode_ids.append(script.id)
+                created_episodes.append({
+                    "id": script.id,
+                    "title": ep_title,
+                    "episode_number": episode_number,
+                    "text_length": len(ep_text),
+                })
+
+            self._save_data()
+            self._save_series_data_unlocked()
+
+        return {
+            "series": series.model_dump(),
+            "episodes": created_episodes,
+        }
+
+    def _split_text_by_markers(self, text: str, episodes_data: List[Dict]) -> List[str]:
+        """Split text into chunks using start/end markers from LLM.
+        Searches sequentially to avoid overlapping chunks."""
+        chunks = []
+        search_from = 0  # Track position to avoid overlap
+
+        for ep in episodes_data:
+            start_marker = ep.get("start_marker", "")
+            end_marker = ep.get("end_marker", "")
+
+            start_idx = search_from
+            end_idx = len(text)
+
+            if start_marker:
+                found = text.find(start_marker, search_from)
+                if found >= 0:
+                    start_idx = found
+
+            if end_marker:
+                found = text.find(end_marker, start_idx)
+                if found >= 0:
+                    end_idx = found + len(end_marker)
+
+            chunks.append(text[start_idx:end_idx])
+            search_from = end_idx  # Next episode starts after this one
+
+        # Fallback: if markers produced empty/overlapping chunks, do equal split
+        if not chunks or all(len(c.strip()) == 0 for c in chunks):
+            chunk_size = max(1, len(text) // len(episodes_data))
+            chunks = []
+            for i in range(len(episodes_data)):
+                start = i * chunk_size
+                end = start + chunk_size if i < len(episodes_data) - 1 else len(text)
+                chunks.append(text[start:end])
+
+        return chunks
+
+    # ============================================================
+    # Series Asset Operations
+    # ============================================================
+
+    def _find_series_asset(self, series_id: str, asset_id: str, asset_type: str):
+        """Find an asset in a Series. Returns (series, asset) tuple."""
+        if asset_type not in ("character", "scene", "prop"):
+            raise ValueError(f"Invalid asset type: {asset_type}")
+        series = self.series_store.get(series_id)
+        if not series:
+            raise ValueError("Series not found")
+        target_asset = None
+        if asset_type == "character":
+            target_asset = next((c for c in series.characters if c.id == asset_id), None)
+        elif asset_type == "scene":
+            target_asset = next((s for s in series.scenes if s.id == asset_id), None)
+        elif asset_type == "prop":
+            target_asset = next((p for p in series.props if p.id == asset_id), None)
+        if not target_asset:
+            raise ValueError(f"Asset {asset_id} of type {asset_type} not found in series")
+        return series, target_asset
+
+    def toggle_series_asset_lock(self, series_id: str, asset_id: str, asset_type: str) -> Series:
+        """Toggle the locked status of a Series asset."""
+        with self._save_lock:
+            series, target_asset = self._find_series_asset(series_id, asset_id, asset_type)
+            target_asset.locked = not target_asset.locked
+            self._save_series_data_unlocked()
+            return series
+
+    def update_series_asset_image(self, series_id: str, asset_id: str, asset_type: str, image_url: str) -> Series:
+        """Updates the image URL of a Series asset."""
+        with self._save_lock:
+            series, target_asset = self._find_series_asset(series_id, asset_id, asset_type)
+            target_asset.image_url = image_url
+            if asset_type == "character":
+                target_asset.avatar_url = image_url
+            self._save_series_data_unlocked()
+            return series
+
+    def update_series_asset_attributes(self, series_id: str, asset_id: str, asset_type: str, attributes: Dict[str, Any]) -> Series:
+        """Updates arbitrary attributes of a Series asset."""
+        with self._save_lock:
+            series, target_asset = self._find_series_asset(series_id, asset_id, asset_type)
+            for key, value in attributes.items():
+                if hasattr(target_asset, key) and key not in ("id", "status", "locked"):
+                    setattr(target_asset, key, value)
+            series.updated_at = time.time()
+            self._save_series_data_unlocked()
+            return series
+
+    def generate_series_asset(self, series_id: str, asset_id: str, asset_type: str,
+                              style_preset: str = None, reference_image_url: str = None,
+                              style_prompt: str = None, generation_type: str = "all",
+                              prompt: str = None, apply_style: bool = True,
+                              negative_prompt: str = None, batch_size: int = 1,
+                              model_name: str = None) -> tuple:
+        """Generate a Series asset. Creates an async task like project asset generation.
+        Returns (series, task_id)."""
+        series = self.series_store.get(series_id)
+        if not series:
+            raise ValueError("Series not found")
+
+        t2i_model = model_name or series.model_settings.t2i_model
+
+        from .assets import ASPECT_RATIO_TO_SIZE
+        if asset_type == "character":
+            aspect_ratio = series.model_settings.character_aspect_ratio
+            default_size = "576*1024"
+        elif asset_type == "scene":
+            aspect_ratio = series.model_settings.scene_aspect_ratio
+            default_size = "1024*576"
+        elif asset_type == "prop":
+            aspect_ratio = series.model_settings.prop_aspect_ratio
+            default_size = "1024*1024"
+        else:
+            aspect_ratio = "9:16"
+            default_size = "576*1024"
+        effective_size = ASPECT_RATIO_TO_SIZE.get(aspect_ratio, default_size)
+
+        effective_positive_prompt = ""
+        effective_negative_prompt = negative_prompt or ""
+        if apply_style:
+            if series.art_direction and series.art_direction.style_config:
+                effective_positive_prompt = series.art_direction.style_config.get('positive_prompt', '')
+                global_neg = series.art_direction.style_config.get('negative_prompt', '')
+                if global_neg:
+                    effective_negative_prompt = f"{effective_negative_prompt}, {global_neg}" if effective_negative_prompt else global_neg
+            elif style_prompt:
+                effective_positive_prompt = style_prompt
+            elif style_preset:
+                effective_positive_prompt = f"{style_preset} style"
+
+        task_id = str(uuid.uuid4())
+        self.asset_generation_tasks[task_id] = {
+            "status": "pending",
+            "progress": 0,
+            "error": None,
+            "script_id": series_id,  # reuse field name for task lookup
+            "asset_id": asset_id,
+            "asset_type": asset_type,
+            "created_at": time.time(),
+            "is_series": True,
+            "params": {
+                "style_preset": style_preset,
+                "reference_image_url": reference_image_url,
+                "effective_positive_prompt": effective_positive_prompt,
+                "effective_negative_prompt": effective_negative_prompt,
+                "generation_type": generation_type,
+                "prompt": prompt,
+                "apply_style": apply_style,
+                "batch_size": batch_size,
+                "t2i_model": t2i_model,
+                "effective_size": effective_size,
+            }
+        }
+        return series, task_id
+
+    def import_assets_from_series(self, target_series_id: str, source_series_id: str, asset_ids: List[str]) -> Tuple[Series, List[str], List[str]]:
+        """Deep-copy selected assets from source Series to target Series.
+        Returns (target_series, imported_ids, skipped_ids)."""
+        with self._save_lock:
+            target = self.series_store.get(target_series_id)
+            if not target:
+                raise ValueError("Target series not found")
+            source = self.series_store.get(source_series_id)
+            if not source:
+                raise ValueError("Source series not found")
+
+            # Build lookup of all source assets
+            source_assets = {}
+            for c in source.characters:
+                source_assets[c.id] = ("character", c)
+            for s in source.scenes:
+                source_assets[s.id] = ("scene", s)
+            for p in source.props:
+                source_assets[p.id] = ("prop", p)
+
+            imported_ids = []
+            skipped_ids = []
+            for aid in asset_ids:
+                if aid not in source_assets:
+                    skipped_ids.append(aid)
+                    continue
+                asset_type, asset = source_assets[aid]
+                # Deep copy with new ID
+                import copy
+                new_asset = copy.deepcopy(asset)
+                new_asset.id = str(uuid.uuid4())
+                if asset_type == "character":
+                    target.characters.append(new_asset)
+                elif asset_type == "scene":
+                    target.scenes.append(new_asset)
+                elif asset_type == "prop":
+                    target.props.append(new_asset)
+                imported_ids.append(aid)
+
+            target.updated_at = time.time()
+            self._save_series_data_unlocked()
+            return target, imported_ids, skipped_ids
+
+    def get_effective_prompt(self, prompt_type: str, episode: Script, series: Optional[Series] = None) -> str:
+        """Three-level fallback: Episode -> Series -> system default."""
+        valid_prompt_types = ("storyboard_polish", "video_polish", "r2v_polish")
+        if prompt_type not in valid_prompt_types:
+            raise ValueError(f"Invalid prompt_type: {prompt_type}. Must be one of {valid_prompt_types}")
+        from .llm import DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
+        defaults = {
+            "storyboard_polish": DEFAULT_STORYBOARD_POLISH_PROMPT,
+            "video_polish": DEFAULT_VIDEO_POLISH_PROMPT,
+            "r2v_polish": DEFAULT_R2V_POLISH_PROMPT,
+        }
+        episode_value = getattr(episode.prompt_config, prompt_type, "")
+        if episode_value.strip():
+            return episode_value
+        if series:
+            series_value = getattr(series.prompt_config, prompt_type, "")
+            if series_value.strip():
+                return series_value
+        return defaults.get(prompt_type, "")
