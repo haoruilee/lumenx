@@ -10,6 +10,7 @@ import dashscope
 from dashscope import ImageSynthesis
 from ..utils import get_logger
 from ..utils.endpoints import get_provider_base_url
+from ..utils.media_refs import MEDIA_REF_UNKNOWN, classify_media_ref
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.provider_media import resolve_media_input
 from ..utils.provider_registry import resolve_provider_backend
@@ -349,8 +350,9 @@ class WanxImageModel(ImageGenModel):
             )
             return resolved.value
         except ValueError as e:
-            if os.path.exists(path):
-                # Compatibility fallback: some legacy callers still pass absolute paths
+            ref_type = classify_media_ref(path)
+            if ref_type == MEDIA_REF_UNKNOWN and os.path.isabs(path) and os.path.exists(path):
+                # Compatibility fallback: only for legacy absolute local paths
                 # outside managed `output/` media refs.
                 if uploader.is_configured:
                     object_key = uploader.upload_file(path, sub_path="temp/ref_images")
@@ -367,8 +369,14 @@ class WanxImageModel(ImageGenModel):
     def _resolve_provider_backend_for_model(self, model_name: str) -> str:
         try:
             return resolve_provider_backend(model_name)
-        except Exception:
+        except (KeyError, ValueError):
             # Keep image flows resilient for models not yet registered.
+            return "dashscope"
+        except Exception as e:
+            logger.warning(
+                f"Unexpected error resolving provider backend for model {model_name}: {e}. "
+                "Falling back to dashscope."
+            )
             return "dashscope"
 
     def _encode_local_image_as_data_uri(self, path: str) -> str:
