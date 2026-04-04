@@ -2,7 +2,7 @@ import os
 import time
 from typing import Dict, Any, List
 from .models import StoryboardFrame, Character, GenerationStatus
-from ...utils import get_logger
+from ...utils import get_logger, log_exception_with_context
 from ...audio.tts import TTSProcessor
 
 logger = get_logger(__name__)
@@ -79,7 +79,20 @@ class AudioGenerator:
             frame.status = GenerationStatus.COMPLETED
             
         except Exception as e:
-            logger.error(f"TTS generation failed for frame {frame.id}: {e}")
+            log_exception_with_context(
+                logger,
+                "TTS generation failed",
+                frame_id=frame.id,
+                character_id=character.id,
+                character_name=character.name,
+                voice_id=character.voice_id,
+                voice_name=character.voice_name,
+                text_length=len(text or ""),
+                speed=speed,
+                pitch=pitch,
+                volume=volume,
+                error=str(e),
+            )
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"TTS generation failed: {str(e)}"
             

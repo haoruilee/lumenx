@@ -9,6 +9,8 @@ import os
 import logging
 from typing import Optional, Tuple
 
+from ..utils import log_exception_with_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,6 +135,16 @@ class TTSProcessor:
         # Get metrics
         request_id = synthesizer.get_last_request_id()
         first_package_delay = synthesizer.get_first_package_delay()
+
+        if audio_data is None:
+            raise RuntimeError(
+                f"TTS provider returned no audio data (request_id={request_id}, voice={voice}, model={model})"
+            )
+        if not isinstance(audio_data, (bytes, bytearray)):
+            raise RuntimeError(
+                f"TTS provider returned unexpected audio payload type: {type(audio_data).__name__} "
+                f"(request_id={request_id}, voice={voice}, model={model})"
+            )
 
         # Ensure output directory exists and save
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
