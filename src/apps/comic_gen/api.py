@@ -347,14 +347,14 @@ async def create_series(request: CreateSeriesRequest):
 @app.get("/series")
 async def list_series():
     """List all Series."""
-    series_list = pipeline.list_series()
+    series_list = pipeline.list_series_with_episode_assets()
     return signed_response(series_list)
 
 
 @app.get("/series/{series_id}")
 async def get_series(series_id: str):
     """Get Series details including assets and episode list."""
-    series = pipeline.get_series(series_id)
+    series = pipeline.get_series_with_episode_assets(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
     # Include episode summaries
@@ -505,7 +505,7 @@ async def update_series_model_settings(series_id: str, settings: UpdateModelSett
 @app.get("/series/{series_id}/assets")
 async def get_series_assets(series_id: str):
     """Get all shared assets from a Series."""
-    series = pipeline.get_series(series_id)
+    series = pipeline.get_series_with_episode_assets(series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
     return signed_response({
@@ -652,11 +652,14 @@ async def import_file_confirm(request: ConfirmImportRequest):
     try:
         # Prefer import_id from cache, fallback to request.text
         text = None
+        import_id_requested = bool(request.import_id)
         if request.import_id:
             text = pipeline._import_cache.pop(request.import_id, None)
         if not text:
             text = request.text
         if not text:
+            if import_id_requested:
+                raise ValueError("Import session expired or missing. Please re-upload the file, or provide text.")
             raise ValueError("No text available. Provide import_id or text.")
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(

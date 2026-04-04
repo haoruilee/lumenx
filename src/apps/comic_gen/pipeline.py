@@ -2768,6 +2768,45 @@ class ComicGenPipeline:
     def list_series(self) -> List[Series]:
         return list(self.series_store.values())
 
+    def _compose_series_with_episode_assets(self, series: Series) -> Series:
+        """Build a read-only Series view that includes assets from its episodes."""
+        merged_series = series.model_copy(deep=True)
+
+        character_ids = {asset.id for asset in merged_series.characters}
+        scene_ids = {asset.id for asset in merged_series.scenes}
+        prop_ids = {asset.id for asset in merged_series.props}
+
+        for episode_id in series.episode_ids:
+            episode = self.scripts.get(episode_id)
+            if not episode:
+                continue
+
+            for character in episode.characters:
+                if character.id not in character_ids:
+                    merged_series.characters.append(character.model_copy(deep=True))
+                    character_ids.add(character.id)
+
+            for scene in episode.scenes:
+                if scene.id not in scene_ids:
+                    merged_series.scenes.append(scene.model_copy(deep=True))
+                    scene_ids.add(scene.id)
+
+            for prop in episode.props:
+                if prop.id not in prop_ids:
+                    merged_series.props.append(prop.model_copy(deep=True))
+                    prop_ids.add(prop.id)
+
+        return merged_series
+
+    def get_series_with_episode_assets(self, series_id: str) -> Optional[Series]:
+        series = self.series_store.get(series_id)
+        if not series:
+            return None
+        return self._compose_series_with_episode_assets(series)
+
+    def list_series_with_episode_assets(self) -> List[Series]:
+        return [self._compose_series_with_episode_assets(series) for series in self.series_store.values()]
+
     def update_series(self, series_id: str, updates: Dict[str, Any]) -> Series:
         """Update Series fields (title, description, etc.)."""
         with self._save_lock:
