@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode } from "lucide-react";
 import { api, type EnvConfigPayload, type ProviderMode } from "@/lib/api";
-import { T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from "@/store/projectStore";
+import { T2I_MODELS, I2I_MODELS, ASPECT_RATIOS, getVideoModelsForMode } from "@/store/projectStore";
 import { Image, Video, Layout, Check, User, Building, Box } from "lucide-react";
 
 type EnvConfig = EnvConfigPayload & {
@@ -56,6 +56,9 @@ const normalizeProviderMode = (mode?: string): ProviderMode => (mode === "vendor
 
 const normalizeLlmProvider = (p?: string): string => (p === "openai" ? "openai" : "dashscope");
 
+const DEFAULT_I2V_MODELS = getVideoModelsForMode("i2v");
+const DEFAULT_R2V_MODELS = getVideoModelsForMode("r2v");
+
 const normalizeEnvConfig = (existing: EnvConfig, data?: EnvConfigPayload): EnvConfig => ({
   ...existing,
   ...data,
@@ -94,6 +97,7 @@ interface DefaultModelSettings {
   t2i_model: string;
   i2i_model: string;
   i2v_model: string;
+  r2v_model: string;
   character_aspect_ratio: string;
   scene_aspect_ratio: string;
   prop_aspect_ratio: string;
@@ -105,6 +109,17 @@ interface DefaultPromptConfig {
   video_polish: string;
   r2v_polish: string;
 }
+
+const DEFAULT_MODEL_SETTINGS: DefaultModelSettings = {
+  t2i_model: "wan2.5-t2i-preview",
+  i2i_model: "wan2.5-i2i-preview",
+  i2v_model: "wan2.5-i2v-preview",
+  r2v_model: "wan2.7-r2v",
+  character_aspect_ratio: "9:16",
+  scene_aspect_ratio: "16:9",
+  prop_aspect_ratio: "1:1",
+  storyboard_aspect_ratio: "16:9",
+};
 
 function loadFromLS<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -126,15 +141,7 @@ export default function SettingsPage() {
 
   // ── Default Model Settings ──
   const [modelSettings, setModelSettings] = useState<DefaultModelSettings>(() =>
-    loadFromLS(LS_KEY_MODEL, {
-      t2i_model: "wan2.5-t2i-preview",
-      i2i_model: "wan2.5-i2i-preview",
-      i2v_model: "wan2.5-i2v-preview",
-      character_aspect_ratio: "9:16",
-      scene_aspect_ratio: "16:9",
-      prop_aspect_ratio: "1:1",
-      storyboard_aspect_ratio: "16:9",
-    })
+    ({ ...DEFAULT_MODEL_SETTINGS, ...loadFromLS(LS_KEY_MODEL, DEFAULT_MODEL_SETTINGS) })
   );
 
   // ── Default Prompt Config ──
@@ -483,13 +490,28 @@ export default function SettingsPage() {
               <span>Motion (Image-to-Video)</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {I2V_MODELS.map((model) => (
+              {DEFAULT_I2V_MODELS.map((model) => (
                 <button key={model.id} onClick={() => setModelSettings((s) => ({ ...s, i2v_model: model.id }))} className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${modelSettings.i2v_model === model.id ? "border-purple-500/50 bg-purple-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
                   {modelSettings.i2v_model === model.id && <div className="absolute top-2 right-2"><Check size={14} className="text-purple-400" /></div>}
                   <span className="text-sm font-medium text-white">{model.name}</span>
                   <span className="text-xs text-gray-500">{model.description}</span>
                 </button>
               ))}
+            </div>
+            <div className="mt-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                <Video size={16} className="text-fuchsia-400" />
+                <span>Motion (Reference-to-Video)</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {DEFAULT_R2V_MODELS.map((model) => (
+                  <button key={model.id} onClick={() => setModelSettings((s) => ({ ...s, r2v_model: model.id }))} className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${modelSettings.r2v_model === model.id ? "border-fuchsia-500/50 bg-fuchsia-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
+                    {modelSettings.r2v_model === model.id && <div className="absolute top-2 right-2"><Check size={14} className="text-fuchsia-400" /></div>}
+                    <span className="text-sm font-medium text-white">{model.name}</span>
+                    <span className="text-xs text-gray-500">{model.description}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

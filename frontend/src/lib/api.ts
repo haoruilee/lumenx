@@ -67,6 +67,7 @@ export interface VideoTask {
     frame_id?: string;
     generation_mode?: string;
     reference_video_urls?: string[];
+    error?: string;
 }
 
 export const api = {
@@ -317,6 +318,7 @@ export const api = {
         t2iModel?: string,
         i2iModel?: string,
         i2vModel?: string,
+        r2vModel?: string,
         characterAspectRatio?: string,
         sceneAspectRatio?: string,
         propAspectRatio?: string,
@@ -326,6 +328,7 @@ export const api = {
             t2i_model: t2iModel,
             i2i_model: i2iModel,
             i2v_model: i2vModel,
+            r2v_model: r2vModel,
             character_aspect_ratio: characterAspectRatio,
             scene_aspect_ratio: sceneAspectRatio,
             prop_aspect_ratio: propAspectRatio,
@@ -646,6 +649,7 @@ export const api = {
         t2i_model?: string;
         i2i_model?: string;
         i2v_model?: string;
+        r2v_model?: string;
         character_aspect_ratio?: string;
         scene_aspect_ratio?: string;
         prop_aspect_ratio?: string;

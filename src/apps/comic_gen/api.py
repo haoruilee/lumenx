@@ -435,6 +435,7 @@ class UpdateModelSettingsRequest(BaseModel):
     t2i_model: Optional[str] = None
     i2i_model: Optional[str] = None
     i2v_model: Optional[str] = None
+    r2v_model: Optional[str] = None
     character_aspect_ratio: Optional[str] = None
     scene_aspect_ratio: Optional[str] = None
     prop_aspect_ratio: Optional[str] = None
@@ -1035,14 +1036,17 @@ class AnalyzeToStoryboardRequest(BaseModel):
 
 
 @app.post("/projects/{script_id}/storyboard/analyze")
-async def analyze_to_storyboard(script_id: str, request: AnalyzeToStoryboardRequest):
+async def analyze_to_storyboard(script_id: str, request: AnalyzeToStoryboardRequest, background_tasks: BackgroundTasks):
     """
     Analyzes script text and generates storyboard frames using AI (Prompt B).
     Replaces existing frames with newly generated ones.
     """
     try:
-        updated_script = pipeline.analyze_text_to_frames(script_id, request.text)
-        return signed_response(updated_script)
+        script, task_id = pipeline.create_storyboard_analysis_task(script_id, request.text)
+        background_tasks.add_task(pipeline.process_storyboard_analysis_task, task_id)
+        response_data = script.model_dump() if hasattr(script, 'model_dump') else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -1445,6 +1449,7 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
             request.t2i_model,
             request.i2i_model,
             request.i2v_model,
+            request.r2v_model,
             request.character_aspect_ratio,
             request.scene_aspect_ratio,
             request.prop_aspect_ratio,
