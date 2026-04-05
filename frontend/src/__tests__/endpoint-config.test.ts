@@ -28,6 +28,7 @@ interface EnvConfig {
 
 const ENDPOINT_PROVIDERS = [
   { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
+  { key: "AIPING_BASE_URL", label: "AIPing", placeholder: "https://aiping.cn/api/v1" },
   { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
 ];
@@ -137,10 +138,10 @@ describe("ENDPOINT_PROVIDERS registry", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("contains exactly DashScope, Kling, Vidu", () => {
-    expect(ENDPOINT_PROVIDERS).toHaveLength(3);
+  it("contains exactly DashScope, AIPing, Kling, Vidu", () => {
+    expect(ENDPOINT_PROVIDERS).toHaveLength(4);
     const labels = ENDPOINT_PROVIDERS.map((p) => p.label);
-    expect(labels).toEqual(expect.arrayContaining(["DashScope", "Kling", "Vidu"]));
+    expect(labels).toEqual(expect.arrayContaining(["DashScope", "AIPing", "Kling", "Vidu"]));
   });
 });
 

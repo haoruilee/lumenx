@@ -682,6 +682,7 @@ async def import_file_confirm(request: ConfirmImportRequest):
 
 class EnvConfig(ProviderRoutingConfig):
     DASHSCOPE_API_KEY: Optional[str] = None
+    AIPING_API_KEY: Optional[str] = None
     LUMENX_ENTRY_PASSWORD: Optional[str] = None
     LUMENX_ENTRY_PASSWORD_CONFIGURED: Optional[bool] = None
     LLM_PROVIDER: Optional[str] = None
@@ -835,6 +836,7 @@ async def update_env_config(config: EnvConfig):
         config_dict: Dict[str, str] = {}
         protected_secret_keys = {
             "DASHSCOPE_API_KEY",
+            "AIPING_API_KEY",
             "LUMENX_ENTRY_PASSWORD",
             "OPENAI_API_KEY",
             "ALIBABA_CLOUD_ACCESS_KEY_ID",
@@ -1171,6 +1173,7 @@ class CreateVideoTaskRequest(BaseModel):
     prompt: str
     frame_id: Optional[str] = None
     duration: int = 5
+    aspect_ratio: Optional[str] = None
     seed: Optional[int] = None
     resolution: str = "720p"
     generate_audio: bool = False
@@ -1211,6 +1214,7 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
                 prompt=request.prompt,
                 frame_id=request.frame_id,
                 duration=request.duration,
+                aspect_ratio=request.aspect_ratio,
                 seed=request.seed,
                 resolution=request.resolution,
                 generate_audio=request.generate_audio,
@@ -2112,6 +2116,7 @@ async def get_env_config(request: Request):
 
         return {
             "DASHSCOPE_API_KEY": _secret_value("DASHSCOPE_API_KEY"),
+            "AIPING_API_KEY": _secret_value("AIPING_API_KEY"),
             "LUMENX_ENTRY_PASSWORD": "",
             "LUMENX_ENTRY_PASSWORD_CONFIGURED": is_entry_auth_enabled(),
             "LLM_PROVIDER": os.getenv("LLM_PROVIDER", "dashscope"),

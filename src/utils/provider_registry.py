@@ -141,10 +141,43 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         },
     ),
     ProviderFamilyConfig(
+        model_family="即梦视频生成",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("AIPING_API_KEY", "OPENAI_API_KEY"),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "seedance_vendor_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="kling-v3-omni",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("AIPING_API_KEY", "OPENAI_API_KEY"),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "seedance_vendor_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="kling-video-o1",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("AIPING_API_KEY", "OPENAI_API_KEY"),
+        },
+        supported_modalities=("i2v",),
+        image_input_mode={
+            "vendor": "seedance_vendor_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
         model_family="doubao-seedance-",
         backend_default="vendor",
         credential_sources={
-            "vendor": ("SEEDANCE_API_KEY",),
+            "vendor": ("AIPING_API_KEY", "SEEDANCE_API_KEY", "OPENAI_API_KEY"),
         },
         supported_modalities=("t2v", "i2v"),
         image_input_mode={

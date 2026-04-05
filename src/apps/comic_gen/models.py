@@ -92,6 +92,7 @@ class VideoTask(BaseModel):
     duration: int = Field(5, description="Video duration in seconds (model-specific range)")
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     resolution: str = Field("720p", description="Video resolution")
+    aspect_ratio: Optional[str] = Field(None, description="Video aspect ratio for provider-specific models")
     generate_audio: bool = Field(False, description="Whether to generate audio")
     audio_url: Optional[str] = Field(None, description="URL of generated/uploaded audio")
     prompt_extend: bool = Field(True, description="Whether to use prompt extension")

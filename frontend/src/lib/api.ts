@@ -36,6 +36,7 @@ export type ProviderMode = "dashscope" | "vendor";
 
 export interface EnvConfigPayload {
     DASHSCOPE_API_KEY?: string;
+    AIPING_API_KEY?: string;
     LUMENX_ENTRY_PASSWORD?: string;
     LUMENX_ENTRY_PASSWORD_CONFIGURED?: boolean;
     LLM_PROVIDER?: string;
@@ -65,6 +66,7 @@ export interface VideoTask {
     status: "pending" | "processing" | "completed" | "failed";
     video_url?: string;
     duration: number;
+    aspect_ratio?: string;
     seed?: number;
     resolution: string;
     generate_audio: boolean;
@@ -142,6 +144,7 @@ export const api = {
         image_url: string,
         prompt: string,
         duration: number = 5,
+        aspectRatio?: string,
         seed?: number,
         resolution: string = "720p",
         generateAudio: boolean = false,
@@ -166,6 +169,7 @@ export const api = {
             image_url,
             prompt,
             duration,
+            aspect_ratio: aspectRatio,
             seed,
             resolution,
             generate_audio: generateAudio,

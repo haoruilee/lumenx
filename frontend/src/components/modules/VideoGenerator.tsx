@@ -22,6 +22,7 @@ export default function VideoGenerator() {
     const [params, setParams] = useState({
         resolution: "720p",
         duration: 5,
+        aspectRatio: "16:9",
         seed: undefined as number | undefined,
         generateAudio: true,  // Default to AI Sound enabled
         audioUrl: "",
@@ -36,7 +37,7 @@ export default function VideoGenerator() {
         referenceVideoUrls: [] as string[],  // Reference videos for R2V (max 3)
         // Kling params
         mode: "std" as string,
-        sound: false,
+        sound: true,
         cfgScale: 0.5,
         // Vidu params
         viduAudio: true,
@@ -105,6 +106,7 @@ export default function VideoGenerator() {
         setParams(p => ({
             ...p,
             duration: task.duration || 5,
+            aspectRatio: task.aspect_ratio || "16:9",
             seed: task.seed,
             resolution: task.resolution || "720p",
             generateAudio: task.generate_audio,

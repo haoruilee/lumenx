@@ -74,6 +74,7 @@ class ComicGenPipeline:
         self._kling_model = None
         self._vidu_model = None
         self._seedance_model = None
+        self._aiping_video_model = None
 
     def _resolve_video_backend(self, model_name: str) -> str:
         try:
@@ -1479,7 +1480,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None) -> Tuple[Script, str]:
+    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, aspect_ratio: str = None, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None) -> Tuple[Script, str]:
         """Creates a new video generation task."""
         script = self.get_script(script_id)
         if not script:
@@ -1529,6 +1530,7 @@ class ComicGenPipeline:
             prompt=prompt,
             status="pending",
             duration=duration,
+            aspect_ratio=aspect_ratio,
             seed=seed,
             resolution=resolution,
             generate_audio=generate_audio,
@@ -2258,13 +2260,17 @@ class ComicGenPipeline:
                 model_name_lower.startswith("seedance-")
                 or model_name_lower.startswith("doubao-seedance-")
             )
+            use_vendor_aiping_video = (
+                model_name_lower == "即梦视频生成 3.0 pro"
+                or model_name_lower == "kling-v3-omni"
+                or model_name_lower == "kling-video-o1"
+            )
 
-            if use_vendor_seedance:
-                # Use Seedance model (cached)
-                if self._seedance_model is None:
-                    from ...models.seedance import SeedanceModel
-                    self._seedance_model = SeedanceModel({})
-                video_path, _ = self._seedance_model.generate(
+            if use_vendor_seedance or use_vendor_aiping_video:
+                if self._aiping_video_model is None:
+                    from ...models.aiping import AipingVideoModel
+                    self._aiping_video_model = AipingVideoModel({})
+                video_path, _ = self._aiping_video_model.generate(
                     prompt=task.prompt,
                     output_path=output_path,
                     img_url=img_url,
@@ -2272,6 +2278,9 @@ class ComicGenPipeline:
                     duration=task.duration,
                     model=task.model,
                     resolution=(task.resolution or "720p").lower(),
+                    aspect_ratio=task.aspect_ratio or "16:9",
+                    mode=task.mode,
+                    sound=task.sound,
                 )
             elif use_vendor_kling:
                 # Use Kling model (cached)

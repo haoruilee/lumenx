@@ -48,17 +48,18 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
             // Reset model-specific params to defaults
             const np = newModelConfig?.params ?? {};
             newParams.resolution = np.resolution?.default ?? "720p";
+            newParams.aspectRatio = np.aspectRatio?.default ?? "16:9";
             newParams.promptExtend = !!np.promptExtend;
             newParams.negativePrompt = "";
             newParams.shotType = "single";
-            newParams.generateAudio = false;
+            newParams.generateAudio = !!np.audio;
             newParams.audioUrl = "";
             // Kling defaults
             newParams.mode = np.mode?.default ?? "std";
-            newParams.sound = false;
+            newParams.sound = !!np.sound;
             newParams.cfgScale = np.cfgScale?.default ?? 0.5;
             // Vidu defaults
-            newParams.viduAudio = true;
+            newParams.viduAudio = !!np.viduAudio;
             newParams.movementAmplitude = np.movementAmplitude?.default ?? "auto";
         }
         setParams(newParams);
@@ -336,6 +337,26 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
                                                         }`}
                                                 >
                                                     {res}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {modelParams.aspectRatio && (
+                                    <div className="mt-4">
+                                        <label className="block text-xs text-gray-400 mb-2">{t("videoSidebar.aspectRatio")}</label>
+                                        <div className={`grid ${GRID_COLS_CLASS[modelParams.aspectRatio.options.length] ?? 'grid-cols-3'} gap-2`}>
+                                            {modelParams.aspectRatio.options.map(ratio => (
+                                                <button
+                                                    key={ratio}
+                                                    onClick={() => updateParam("aspectRatio", ratio)}
+                                                    className={`py-1.5 text-xs rounded-lg border transition-all ${params.aspectRatio === ratio
+                                                        ? "border-primary/50 bg-primary/10 text-primary"
+                                                        : "border-white/10 bg-black/20 text-gray-400 hover:text-gray-200 hover:border-white/20"
+                                                        }`}
+                                                >
+                                                    {ratio}
                                                 </button>
                                             ))}
                                         </div>

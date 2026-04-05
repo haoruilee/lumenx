@@ -10,6 +10,7 @@ import { useI18n } from "@/i18n/provider";
 
 type EnvConfig = EnvConfigPayload & {
   DASHSCOPE_API_KEY: string;
+  AIPING_API_KEY: string;
   LUMENX_ENTRY_PASSWORD: string;
   LUMENX_ENTRY_PASSWORD_CONFIGURED: boolean;
   LLM_PROVIDER: string;
@@ -32,12 +33,14 @@ type EnvConfig = EnvConfigPayload & {
 
 const ENDPOINT_PROVIDERS = [
   { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
+  { key: "AIPING_BASE_URL", label: "AIPing", placeholder: "https://aiping.cn/api/v1" },
   { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
 ];
 
 const DEFAULT_CONFIG: EnvConfig = {
   DASHSCOPE_API_KEY: "",
+  AIPING_API_KEY: "",
   LUMENX_ENTRY_PASSWORD: "",
   LUMENX_ENTRY_PASSWORD_CONFIGURED: false,
   LLM_PROVIDER: "dashscope",
@@ -262,6 +265,15 @@ export default function SettingsPage() {
                 <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
               </label>
               <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder={t("settingsPage.dashscopePlaceholder")} className={inputClass} />
+            </div>
+
+            <div>
+              <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
+                <span>{t("settingsPage.aipingApiKey")}</span>
+                <span className="text-gray-600 font-normal text-xs">AIPing video / TTS</span>
+              </label>
+              <input type="password" value={config.AIPING_API_KEY} onChange={(e) => handleChange("AIPING_API_KEY", e.target.value)} placeholder={t("settingsPage.aipingPlaceholder")} className={inputClass} />
+              <p className="text-[10px] text-gray-500 mt-1">{t("settingsPage.aipingHint")}</p>
             </div>
 
             <div className="pt-4 border-t border-white/10">

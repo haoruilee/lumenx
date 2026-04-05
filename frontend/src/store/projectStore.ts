@@ -166,6 +166,7 @@ export interface ModelParamSupport {
     promptExtend?: boolean;
     shotType?: boolean;
     audio?: boolean;
+    aspectRatio?: { options: string[]; default: string };
     // Kling
     mode?: { options: string[]; default: string };
     sound?: boolean;
@@ -211,6 +212,22 @@ const KLING_PARAMS: ModelParamSupport = {
     cfgScale: { min: 0, max: 1, step: 0.1, default: 0.5 },
 };
 
+const AIPING_VIDEO_PARAMS: ModelParamSupport = {
+    aspectRatio: { options: ['1:1', '16:9', '9:16'], default: '16:9' },
+};
+
+const AIPING_KLING_OMNI_PARAMS: ModelParamSupport = {
+    aspectRatio: { options: ['1:1', '16:9', '9:16'], default: '16:9' },
+    mode: { options: ['pro'], default: 'pro' },
+    sound: true,
+};
+
+const AIPING_KLING_O1_PARAMS: ModelParamSupport = {
+    aspectRatio: { options: ['1:1', '16:9', '9:16'], default: '1:1' },
+    mode: { options: ['pro'], default: 'pro' },
+    sound: true,
+};
+
 const VIDU_PARAMS: ModelParamSupport = {
     resolution: { options: ['540p', '720p', '1080p'], default: '720p' },
     seed: true, viduAudio: true,
@@ -242,6 +259,12 @@ export const I2V_MODELS: I2VModelConfig[] = [
       duration: { type: 'buttons', options: [5, 10], default: 5 }, params: { resolution: { options: ['480p', '720p', '1080p'], default: '720p' } }, generationModes: ['i2v'] },
     { id: 'Doubao-Seedance-1.0-Lite', name: 'Seedance Lite', description: 'ByteDance Seedance Lite (via aiping)',
       duration: { type: 'buttons', options: [5, 10], default: 5 }, params: { resolution: { options: ['480p', '720p'], default: '720p' } }, generationModes: ['i2v'] },
+    { id: '即梦视频生成 3.0 Pro', name: '即梦视频生成 3.0 Pro', description: 'Jimeng video generation via AIPing',
+      duration: { type: 'buttons', options: [5, 10], default: 5 }, params: AIPING_VIDEO_PARAMS, generationModes: ['i2v'] },
+    { id: 'Kling-V3-Omni', name: 'Kling-V3-Omni', description: 'Kling Omni via AIPing',
+      duration: { type: 'buttons', options: [5, 10], default: 5 }, params: AIPING_KLING_OMNI_PARAMS, generationModes: ['i2v'] },
+    { id: 'Kling-Video-O1', name: 'Kling-Video-O1', description: 'Kling object-aware video generation via AIPing',
+      duration: { type: 'buttons', options: [5, 7, 10], default: 7 }, params: AIPING_KLING_O1_PARAMS, generationModes: ['i2v'] },
 ];
 
 export const getVideoModelsForMode = (mode: 'i2v' | 'r2v') =>
@@ -256,6 +279,7 @@ export const ASPECT_RATIOS = [
 export interface VideoParams {
     resolution: string;
     duration: number;
+    aspectRatio: string;
     seed: number | undefined;
     generateAudio: boolean;
     audioUrl: string;
@@ -279,6 +303,7 @@ export interface VideoParams {
 
 /** 将动态列数映射为完整的 Tailwind class（避免 JIT 扫描不到动态拼接） */
 export const GRID_COLS_CLASS: Record<number, string> = {
+    1: 'grid-cols-1',
     2: 'grid-cols-2',
     3: 'grid-cols-3',
     4: 'grid-cols-4',

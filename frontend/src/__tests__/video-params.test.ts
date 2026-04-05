@@ -203,6 +203,30 @@ describe('Vidu Q3 模型参数', () => {
     });
 });
 
+describe('AIPing 视频模型参数', () => {
+    const jimeng = I2V_MODELS.find(m => m.id === '即梦视频生成 3.0 Pro')!;
+    const klingOmni = I2V_MODELS.find(m => m.id === 'Kling-V3-Omni')!;
+    const klingO1 = I2V_MODELS.find(m => m.id === 'Kling-Video-O1')!;
+
+    it('即梦 3.0 Pro 支持 5/10 秒', () => {
+        expect(jimeng.duration).toEqual({ type: 'buttons', options: [5, 10], default: 5 });
+        expect(jimeng.generationModes).toEqual(['i2v']);
+    });
+
+    it('Kling-V3-Omni 支持 5/10 秒且默认 pro', () => {
+        expect(klingOmni.duration).toEqual({ type: 'buttons', options: [5, 10], default: 5 });
+        expect(klingOmni.params.mode).toBeDefined();
+        expect(klingOmni.params.mode!.options).toEqual(['pro']);
+        expect(klingOmni.params.mode!.default).toBe('pro');
+    });
+
+    it('Kling-Video-O1 支持 5/7/10 秒且默认 1:1', () => {
+        expect(klingO1.duration).toEqual({ type: 'buttons', options: [5, 7, 10], default: 7 });
+        expect(klingO1.params.mode!.options).toEqual(['pro']);
+        expect(klingO1.params.aspectRatio!.default).toBe('1:1');
+    });
+});
+
 // ── GRID_COLS_CLASS 映射 ───────────────────────────────────────────────
 
 describe('GRID_COLS_CLASS', () => {
@@ -245,15 +269,16 @@ describe('模型切换参数重置逻辑', () => {
         const np = newModelConfig?.params ?? {};
         return {
             resolution: np.resolution?.default ?? "720p",
+            aspectRatio: np.aspectRatio?.default ?? "16:9",
             promptExtend: !!np.promptExtend,
             negativePrompt: "",
             shotType: "single",
-            generateAudio: false,
+            generateAudio: !!np.audio,
             audioUrl: "",
             mode: np.mode?.default ?? "std",
-            sound: false,
+            sound: !!np.sound,
             cfgScale: np.cfgScale?.default ?? 0.5,
-            viduAudio: true,
+            viduAudio: !!np.viduAudio,
             movementAmplitude: np.movementAmplitude?.default ?? "auto",
         };
     }
@@ -263,6 +288,8 @@ describe('模型切换参数重置逻辑', () => {
         expect(result.mode).toBe('std');
         expect(result.cfgScale).toBe(0.5);
         expect(result.promptExtend).toBe(false);
+        expect(result.aspectRatio).toBe('16:9');
+        expect(result.sound).toBe(true);
     });
 
     it('切换到 Vidu → movementAmplitude 默认 auto', () => {
@@ -275,10 +302,19 @@ describe('模型切换参数重置逻辑', () => {
         const result = simulateModelSwitch('wan2.6-i2v');
         expect(result.promptExtend).toBe(true);
         expect(result.resolution).toBe('720p');
+        expect(result.aspectRatio).toBe('16:9');
+        expect(result.generateAudio).toBe(true);
     });
 
     it('切换到 Wan 2.2 → 无 promptExtend', () => {
         const result = simulateModelSwitch('wan2.2-i2v-plus');
         expect(result.promptExtend).toBe(false);
+    });
+
+    it('切换到 Kling-Video-O1 → aspectRatio 默认 1:1', () => {
+        const result = simulateModelSwitch('Kling-Video-O1');
+        expect(result.mode).toBe('pro');
+        expect(result.aspectRatio).toBe('1:1');
+        expect(result.sound).toBe(true);
     });
 });

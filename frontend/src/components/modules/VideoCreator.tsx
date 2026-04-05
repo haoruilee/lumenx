@@ -348,6 +348,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                         status: "pending",
                         video_url: undefined,
                         duration: params.duration,
+                        aspect_ratio: params.aspectRatio,
                         seed: params.seed,
                         resolution: params.resolution,
                         generate_audio: params.generateAudio,
@@ -410,6 +411,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     finalImageUrl, // Can be empty string
                     finalPrompt,
                     params.duration,
+                    params.aspectRatio,
                     params.seed,
                     params.resolution,
                     params.generateAudio,

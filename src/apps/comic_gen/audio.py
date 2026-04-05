@@ -25,7 +25,13 @@ class AudioGenerator:
         if self.tts:
             voices_dict = TTSProcessor.list_voices()
             return [
-                {"id": key, "name": f"{meta['name']} - CosyVoice", "gender": meta.get('gender', 'Unknown'), "model": meta.get('model', 'cosyvoice-v2')}
+                {
+                    "id": key,
+                    "name": f"{meta['name']} - {meta.get('model', 'CosyVoice')}",
+                    "gender": meta.get('gender', 'Unknown'),
+                    "model": meta.get('model', 'cosyvoice-v2'),
+                    "provider": meta.get('provider', 'dashscope'),
+                }
                 for key, meta in voices_dict.items()
             ]
         else:
