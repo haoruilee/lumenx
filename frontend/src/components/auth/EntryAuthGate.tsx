@@ -5,6 +5,7 @@ import { Loader2, Lock } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { extractErrorDetail } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 
 interface EntryAuthGateProps {
@@ -13,6 +14,7 @@ interface EntryAuthGateProps {
 
 
 export default function EntryAuthGate({ children }: EntryAuthGateProps) {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -37,7 +39,7 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
         setAuthenticated(status.authenticated);
       } catch (err) {
         if (cancelled) return;
-        setError(extractErrorDetail(err, "Failed to check entry authentication status"));
+        setError(extractErrorDetail(err, t("auth.statusFailed")));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -50,7 +52,7 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!password.trim()) {
-      setError("请输入入口密码");
+      setError(t("auth.entryPasswordRequired"));
       return;
     }
 
@@ -61,10 +63,10 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
       setPassword("");
       const status = await refreshStatus();
       if (!status.authenticated) {
-        setError("密码校验未生效，请重试");
+        setError(t("auth.entryPasswordRetry"));
       }
     } catch (err) {
-      setError(extractErrorDetail(err, "密码错误或登录失败"));
+      setError(extractErrorDetail(err, t("auth.entryPasswordFailed")));
     } finally {
       setSubmitting(false);
     }
@@ -75,7 +77,7 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-300">
           <Loader2 size={20} className="animate-spin" />
-          <span>Checking access...</span>
+          <span>{t("auth.checkingAccess")}</span>
         </div>
       </div>
     );
@@ -93,21 +95,21 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
             <Lock className="text-amber-300" size={22} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">LumenX Access</h1>
-            <p className="text-sm text-gray-400">此实例已启用入口密码保护</p>
+            <h1 className="text-xl font-bold text-white">{t("auth.accessTitle")}</h1>
+            <p className="text-sm text-gray-400">{t("auth.accessEnabled")}</p>
           </div>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">入口密码</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.entryPassword")}</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoFocus
               className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 transition-colors"
-              placeholder="请输入访问密码"
+              placeholder={t("auth.entryPasswordPlaceholder")}
             />
           </div>
           {error ? (
@@ -121,7 +123,7 @@ export default function EntryAuthGate({ children }: EntryAuthGateProps) {
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 py-3 text-sm font-medium text-white transition-colors hover:from-amber-500 hover:to-orange-500 disabled:opacity-50"
           >
             {submitting ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
-            {submitting ? "验证中..." : "进入"}
+            {submitting ? t("auth.submitting") : t("auth.submit")}
           </button>
         </form>
       </div>
