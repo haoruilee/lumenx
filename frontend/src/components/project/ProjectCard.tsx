@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Calendar, Trash2, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Project } from "@/store/projectStore";
+import { useI18n } from "@/i18n/provider";
 
 interface ProjectCardProps {
     project: Project;
@@ -11,6 +12,7 @@ interface ProjectCardProps {
 }
 
 export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
+    const { t } = useI18n();
     const router = useRouter();
 
     const handleOpen = () => {
@@ -19,7 +21,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm(`确定要删除项目"${project.title}"吗？`)) {
+        if (confirm(t("projectCard.deleteConfirm", { title: project.title }))) {
             onDelete(project.id);
         }
     };
@@ -45,7 +47,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                         <Calendar size={12} />
-                        <span>{new Date(project.createdAt).toLocaleDateString('zh-CN')}</span>
+                <span>{new Date(project.createdAt).toLocaleDateString('zh-CN')}</span>
                     </div>
                 </div>
 
@@ -60,21 +62,21 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
             </div>
 
             <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
-                <span>角色 <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
+                <span>{t("projectCard.characters")} <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
                 <span className="text-gray-600">·</span>
-                <span>场景 <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
+                <span>{t("projectCard.scenes")} <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
                 <span className="text-gray-600">·</span>
-                <span>分镜 <span className="text-white font-medium">{project.frames?.length || 0}</span></span>
+                <span>{t("projectCard.frames")} <span className="text-white font-medium">{project.frames?.length || 0}</span></span>
             </div>
 
             <div className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-1 rounded ${statusColors[project.status as keyof typeof statusColors] || statusColors.pending}`}>
-                    {project.status || '待开始'}
+                    {project.status || t("projectCard.pending")}
                 </span>
 
                 <div className="flex items-center gap-1 text-primary text-xs font-medium">
                     <Play size={14} />
-                    <span>打开项目</span>
+                    <span>{t("projectCard.openProject")}</span>
                 </div>
             </div>
         </motion.div>
