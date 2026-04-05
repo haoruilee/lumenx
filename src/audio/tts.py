@@ -7,7 +7,7 @@ See: https://help.aliyun.com/zh/model-studio/cosyvoice-python-sdk
 """
 import os
 import logging
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from ..utils import log_exception_with_context
 
@@ -110,10 +110,18 @@ class TTSProcessor:
         start_time = time.time()
         voice = voice or self.voice
 
-        # Resolve the correct model for the voice if it's a known voice
-        model = self._resolve_model_for_voice(voice)
+        # Resolve registry key/model_id into the provider-facing voice id and matching model
+        resolved_voice_id, model = self._resolve_voice_config(voice)
 
-        logger.info(f"Synthesizing with model={model}, voice='{voice}' (rate={speech_rate}, pitch={pitch_rate}, vol={volume})...")
+        logger.info(
+            "Synthesizing with model=%s, voice=%r, provider_voice=%r (rate=%s, pitch=%s, vol=%s)...",
+            model,
+            voice,
+            resolved_voice_id,
+            speech_rate,
+            pitch_rate,
+            volume,
+        )
         logger.info(f"Text: {text[:100]}{'...' if len(text) > 100 else ''}")
 
         # Clamp parameters to valid ranges per DashScope docs
@@ -123,7 +131,7 @@ class TTSProcessor:
 
         synthesizer = SpeechSynthesizer(
             model=model,
-            voice=voice,
+            voice=resolved_voice_id,
             speech_rate=speech_rate,
             pitch_rate=pitch_rate,
             volume=volume,
@@ -138,12 +146,12 @@ class TTSProcessor:
 
         if audio_data is None:
             raise RuntimeError(
-                f"TTS provider returned no audio data (request_id={request_id}, voice={voice}, model={model})"
+                f"TTS provider returned no audio data (request_id={request_id}, voice={voice}, provider_voice={resolved_voice_id}, model={model})"
             )
         if not isinstance(audio_data, (bytes, bytearray)):
             raise RuntimeError(
                 f"TTS provider returned unexpected audio payload type: {type(audio_data).__name__} "
-                f"(request_id={request_id}, voice={voice}, model={model})"
+                f"(request_id={request_id}, voice={voice}, provider_voice={resolved_voice_id}, model={model})"
             )
 
         # Ensure output directory exists and save
@@ -156,16 +164,27 @@ class TTSProcessor:
 
         return output_path, first_package_delay, request_id
 
-    def _resolve_model_for_voice(self, voice_id: str) -> str:
-        """Resolve the correct model for a given voice ID.
+    def _resolve_voice_config(self, voice_id: str) -> Tuple[str, str]:
+        """Resolve the provider-facing voice id and matching model for a voice.
 
         v2 voices require cosyvoice-v2, v3 voices require cosyvoice-v3-flash/plus.
-        Falls back to self.model if voice is not in the registry (e.g. cloned voices).
+        Supports both registry keys (e.g. ``longze``) and raw provider ids
+        (e.g. ``longze_v2``). Falls back to the incoming voice id with self.model
+        for unknown/custom voices.
         """
-        for meta in VOICES.values():
-            if meta['model_id'] == voice_id:
-                return meta.get('model', self.model)
-        return self.model
+        voice_key = (voice_id or "").strip()
+        if not voice_key:
+            return self.voice, self.model
+
+        meta: Optional[Dict[str, str]] = VOICES.get(voice_key)
+        if meta:
+            return meta.get("model_id", voice_key), meta.get("model", self.model)
+
+        for registry_key, item in VOICES.items():
+            if item.get("model_id") == voice_key:
+                return item.get("model_id", registry_key), item.get("model", self.model)
+
+        return voice_key, self.model
 
     @staticmethod
     def list_voices():

@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.apps.comic_gen.models import Character, Scene, Script, StoryboardFrame
+from src.apps.comic_gen.models import Character, Scene, Script, StoryboardFrame, VideoTask
 from src.apps.comic_gen.pipeline import ComicGenPipeline
 from src.models.wanx import WanxModel
 
@@ -178,3 +178,57 @@ def test_create_video_task_preserves_supported_r2v_model():
     task = next(t for t in script.video_tasks if t.id == task_id)
 
     assert task.model == "wan2.7-r2v"
+
+
+def test_build_merge_segments_includes_frame_audio_tracks():
+    now = time.time()
+    frame = StoryboardFrame(
+        id="frame-merge-audio",
+        scene_id="scene-merge-audio",
+        character_ids=[],
+        prop_ids=[],
+        audio_url="audio/dialogue/frame-merge-audio.mp3",
+        sfx_url="audio/sfx/frame-merge-audio.mp3",
+        bgm_url="audio/bgm/frame-merge-audio.mp3",
+        selected_video_id="video-task-merge-audio",
+    )
+    script = Script(
+        id="script-merge-audio",
+        title="Merge Audio",
+        original_text="demo",
+        characters=[],
+        scenes=[],
+        frames=[frame],
+        video_tasks=[
+            VideoTask(
+                id="video-task-merge-audio",
+                project_id="script-merge-audio",
+                frame_id="frame-merge-audio",
+                image_url="storyboard/frame.png",
+                prompt="Camera push-in",
+                status="completed",
+                video_url="video/frame-merge-audio.mp4",
+                duration=10,
+            )
+        ],
+        created_at=now,
+        updated_at=now,
+    )
+
+    for rel_path in (
+        "video/frame-merge-audio.mp4",
+        "audio/dialogue/frame-merge-audio.mp3",
+        "audio/sfx/frame-merge-audio.mp3",
+        "audio/bgm/frame-merge-audio.mp3",
+    ):
+        file_path = Path("output") / rel_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(b"data")
+
+    pipeline = _build_pipeline(script, WanxModel({"params": {}}))
+
+    segments = pipeline._build_merge_segments(script)
+
+    assert len(segments) == 1
+    assert segments[0]["duration"] == 10
+    assert [item["label"] for item in segments[0]["audio_inputs"]] == ["dialogue", "sfx", "bgm"]

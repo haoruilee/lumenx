@@ -896,7 +896,7 @@ async def update_env_config(config: EnvConfig):
 @app.get("/projects/{script_id}", response_model=Script)
 async def get_project(script_id: str):
     """Retrieves a project by ID."""
-    script = pipeline.get_script(script_id)
+    script = pipeline.get_script_with_series_assets(script_id)
     if not script:
         raise HTTPException(status_code=404, detail="Project not found")
     return signed_response(script)

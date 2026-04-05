@@ -107,6 +107,13 @@ class ComicGenPipeline:
     def get_script(self, script_id: str) -> Optional[Script]:
         return self.scripts.get(script_id)
 
+    def get_script_with_series_assets(self, script_id: str) -> Optional[Script]:
+        script = self.scripts.get(script_id)
+        if not script:
+            return None
+        self.ensure_episode_inherits_series_assets(script_id)
+        return self.scripts.get(script_id)
+
     def _load_data(self) -> Dict[str, Script]:
         if not os.path.exists(self.data_file):
             return {}
@@ -1761,55 +1768,34 @@ class ComicGenPipeline:
         except Exception as e:
             logger.warning(f"[MERGE] Could not get FFmpeg version: {e}")
             
-        # Collect video paths
-        video_paths = []
-        for i, frame in enumerate(script.frames):
-            logger.info(f"[MERGE] Processing frame {i+1}/{len(script.frames)}: {frame.id}")
-            
-            if not frame.selected_video_id:
-                # Try to find a default completed video
-                default_video = next((v for v in script.video_tasks if v.frame_id == frame.id and v.status == "completed"), None)
-                if default_video and default_video.video_url:
-                    logger.debug(f"[MERGE]   -> Using default video: {default_video.video_url}")
-                    video_paths.append(default_video.video_url)
-                else:
-                    logger.warning(f"[MERGE]   -> No video selected or available, skipping")
-                continue
-                
-            video = next((v for v in script.video_tasks if v.id == frame.selected_video_id), None)
-            if video and video.video_url:
-                logger.debug(f"[MERGE]   -> Selected video: {video.video_url}")
-                video_paths.append(video.video_url)
-            else:
-                logger.warning(f"[MERGE]   -> Selected video {frame.selected_video_id} not found or has no URL")
-                
-        if not video_paths:
+        merge_segments = self._build_merge_segments(script)
+        if not merge_segments:
             logger.error("[MERGE] No videos found to merge!")
             raise ValueError("No videos selected to merge. Please select videos for each frame first.")
-        
-        logger.info(f"[MERGE] Found {len(video_paths)} videos to merge")
-            
+
+        logger.info(f"[MERGE] Found {len(merge_segments)} videos to merge")
+
+        normalized_segment_dir = _safe_resolve_path(os.path.join("output", "video"), os.path.join("merge_segments", script_id))
+        os.makedirs(normalized_segment_dir, exist_ok=True)
+
+        normalized_segment_paths = self._render_merge_segments(
+            script=script,
+            merge_segments=merge_segments,
+            ffmpeg_path=ffmpeg_path,
+            output_dir=normalized_segment_dir,
+        )
+        if not normalized_segment_paths:
+            logger.error("[MERGE] No valid normalized segments were created!")
+            raise ValueError("No valid video files found. The video files may have been deleted or moved.")
+
         # Create file list for ffmpeg
         list_path = _safe_resolve_path("output", f"merge_list_{script_id}.txt")
-        abs_video_paths = []
-
         with open(list_path, "w") as f:
-            for path in video_paths:
-                # Resolve to absolute path
-                if not path.startswith("http"):
-                    abs_path = _safe_resolve_path("output", path)
-                    if os.path.exists(abs_path):
-                        f.write(f"file '{abs_path}'\n")
-                        abs_video_paths.append(abs_path)
-                        logger.debug(f"[MERGE] Added to list: {abs_path}")
-                    else:
-                        logger.warning(f"[MERGE] Video file not found: {abs_path}")
-                        
-        if not abs_video_paths:
-            logger.error("[MERGE] No valid video files found on disk!")
-            raise ValueError("No valid video files found. The video files may have been deleted or moved.")
-        
-        logger.info(f"[MERGE] Merge list created with {len(abs_video_paths)} videos")
+            for abs_path in normalized_segment_paths:
+                f.write(f"file '{abs_path}'\n")
+                logger.debug(f"[MERGE] Added normalized segment to list: {abs_path}")
+
+        logger.info(f"[MERGE] Merge list created with {len(normalized_segment_paths)} videos")
 
         # Output path
         output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
@@ -1819,7 +1805,7 @@ class ComicGenPipeline:
         logger.debug(f"[MERGE] Output path: {output_path}")
         
         # Log video file details for debugging
-        for i, path in enumerate(abs_video_paths):
+        for i, path in enumerate(normalized_segment_paths):
             try:
                 size_mb = os.path.getsize(path) / (1024 * 1024)
                 logger.debug(f"[MERGE] Input video {i+1}: {os.path.basename(path)} ({size_mb:.2f} MB)")
@@ -1883,11 +1869,167 @@ class ComicGenPipeline:
             logger.error(f"[MERGE] FFmpeg command: {' '.join(cmd)}")
             logger.error(f"[MERGE] FFmpeg stderr: {stderr_msg}")
             logger.error(f"[MERGE] FFmpeg stdout: {stdout_msg}")
-            logger.error(f"[MERGE] Video files attempted: {[os.path.basename(p) for p in abs_video_paths]}")
+            logger.error(f"[MERGE] Video files attempted: {[os.path.basename(p) for p in normalized_segment_paths]}")
             
             # Extract user-friendly error message
-            user_msg = self._extract_ffmpeg_error_message(stderr_msg, abs_video_paths)
+            user_msg = self._extract_ffmpeg_error_message(stderr_msg, normalized_segment_paths)
             raise RuntimeError(user_msg)
+
+    def _build_merge_segments(self, script: Script) -> List[Dict[str, Any]]:
+        merge_segments: List[Dict[str, Any]] = []
+
+        for i, frame in enumerate(script.frames):
+            logger.info(f"[MERGE] Processing frame {i+1}/{len(script.frames)}: {frame.id}")
+            video_task = self._resolve_frame_video_task(script, frame)
+            if not video_task or not video_task.video_url:
+                logger.warning(f"[MERGE]   -> No selected or completed video available for frame {frame.id}, skipping")
+                continue
+
+            video_path = self._resolve_local_media_path(video_task.video_url)
+            if not video_path:
+                logger.warning(f"[MERGE]   -> Video file not found for frame {frame.id}: {video_task.video_url}")
+                continue
+
+            audio_inputs: List[Dict[str, Any]] = []
+            for rel_path, label, volume in (
+                (frame.audio_url, "dialogue", 1.0),
+                (frame.sfx_url, "sfx", 0.8),
+                (frame.bgm_url, "bgm", 0.35),
+            ):
+                abs_path = self._resolve_local_media_path(rel_path)
+                if abs_path:
+                    audio_inputs.append({"path": abs_path, "label": label, "volume": volume})
+
+            merge_segments.append(
+                {
+                    "frame_id": frame.id,
+                    "video_path": video_path,
+                    "duration": max(int(video_task.duration or 5), 1),
+                    "audio_inputs": audio_inputs,
+                }
+            )
+            logger.info(
+                "[MERGE]   -> Prepared segment frame_id=%s duration=%ss audio_tracks=%s",
+                frame.id,
+                max(int(video_task.duration or 5), 1),
+                [item["label"] for item in audio_inputs],
+            )
+
+        return merge_segments
+
+    def _resolve_frame_video_task(self, script: Script, frame: StoryboardFrame) -> Optional[VideoTask]:
+        if frame.selected_video_id:
+            selected_video = next((v for v in script.video_tasks if v.id == frame.selected_video_id), None)
+            if selected_video and selected_video.video_url:
+                logger.debug(f"[MERGE]   -> Using selected video: {selected_video.video_url}")
+                return selected_video
+            logger.warning(f"[MERGE]   -> Selected video {frame.selected_video_id} not found or has no URL")
+
+        default_video = next(
+            (v for v in script.video_tasks if v.frame_id == frame.id and v.status == "completed" and v.video_url),
+            None,
+        )
+        if default_video:
+            logger.debug(f"[MERGE]   -> Using default completed video: {default_video.video_url}")
+        return default_video
+
+    def _resolve_local_media_path(self, rel_path: Optional[str]) -> Optional[str]:
+        if not rel_path or rel_path.startswith("http"):
+            return None
+        abs_path = _safe_resolve_path("output", rel_path)
+        return abs_path if os.path.exists(abs_path) else None
+
+    def _render_merge_segments(
+        self,
+        script: Script,
+        merge_segments: List[Dict[str, Any]],
+        ffmpeg_path: str,
+        output_dir: str,
+    ) -> List[str]:
+        rendered_paths: List[str] = []
+
+        for index, segment in enumerate(merge_segments, start=1):
+            output_path = _safe_resolve_path(output_dir, f"{index:03d}_{segment['frame_id']}.mp4")
+            duration = max(int(segment["duration"]), 1)
+            cmd = [ffmpeg_path, "-y", "-i", segment["video_path"]]
+
+            if segment["audio_inputs"]:
+                filter_parts: List[str] = []
+                audio_labels: List[str] = []
+                for input_index, audio_input in enumerate(segment["audio_inputs"], start=1):
+                    cmd.extend(["-i", audio_input["path"]])
+                    mixed_label = f"a{input_index}"
+                    filter_parts.append(f"[{input_index}:a]volume={audio_input['volume']}[{mixed_label}]")
+                    audio_labels.append(f"[{mixed_label}]")
+
+                filter_parts.append(
+                    f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0,"
+                    f"apad=pad_dur={duration},atrim=duration={duration}[aout]"
+                )
+                cmd.extend(
+                    [
+                        "-filter_complex",
+                        ";".join(filter_parts),
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "[aout]",
+                    ]
+                )
+            else:
+                cmd.extend(
+                    [
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "anullsrc=channel_layout=stereo:sample_rate=44100",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                    ]
+                )
+
+            cmd.extend(
+                [
+                    "-t",
+                    str(duration),
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    "23",
+                    "-preset",
+                    "fast",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    "-movflags",
+                    "+faststart",
+                    output_path,
+                ]
+            )
+
+            logger.debug(f"[MERGE] Rendering normalized segment: {' '.join(cmd)}")
+            try:
+                result = subprocess.run(cmd, check=True, capture_output=True, timeout=180)
+                if result.stdout:
+                    logger.debug(f"[MERGE] Segment stdout {os.path.basename(output_path)}: {result.stdout.decode(errors='ignore')[:500]}")
+                rendered_paths.append(output_path)
+            except subprocess.CalledProcessError as e:
+                stderr_msg = e.stderr.decode(errors="ignore") if e.stderr else "No error output"
+                logger.error(
+                    "[MERGE] Failed to render normalized segment frame_id=%s video=%s stderr=%s",
+                    segment["frame_id"],
+                    segment["video_path"],
+                    stderr_msg,
+                )
+                raise RuntimeError(f"Failed to prepare final mix segment for frame {segment['frame_id']}: {stderr_msg}")
+            except subprocess.TimeoutExpired:
+                logger.error("[MERGE] Timed out while rendering normalized segment for frame %s", segment["frame_id"])
+                raise RuntimeError(f"Timed out while preparing final mix segment for frame {segment['frame_id']}")
+
+        return rendered_paths
     
     def _extract_ffmpeg_error_message(self, stderr: str, video_paths: List[str]) -> str:
         """
@@ -2855,6 +2997,7 @@ class ComicGenPipeline:
                 series.episode_ids.append(script_id)
             script.series_id = series_id
             script.episode_number = episode_number or len(series.episode_ids)
+            self._inherit_series_assets_into_episode_unlocked(script, series)
             series.updated_at = time.time()
             self._save_data()
             self._save_series_data_unlocked()
@@ -2916,6 +3059,56 @@ class ComicGenPipeline:
             "scenes": merged_scenes,
             "props": merged_props,
         }
+
+    def _inherit_series_assets_into_episode_unlocked(self, episode: Script, series: Optional[Series] = None) -> bool:
+        if not series and episode.series_id:
+            series = self.series_store.get(episode.series_id)
+        if not series:
+            return False
+
+        changed = False
+
+        existing_char_ids = {asset.id for asset in episode.characters}
+        for asset in series.characters:
+            if asset.id not in existing_char_ids:
+                episode.characters.append(asset.model_copy(deep=True))
+                existing_char_ids.add(asset.id)
+                changed = True
+
+        existing_scene_ids = {asset.id for asset in episode.scenes}
+        for asset in series.scenes:
+            if asset.id not in existing_scene_ids:
+                episode.scenes.append(asset.model_copy(deep=True))
+                existing_scene_ids.add(asset.id)
+                changed = True
+
+        existing_prop_ids = {asset.id for asset in episode.props}
+        for asset in series.props:
+            if asset.id not in existing_prop_ids:
+                episode.props.append(asset.model_copy(deep=True))
+                existing_prop_ids.add(asset.id)
+                changed = True
+
+        if changed:
+            episode.updated_at = time.time()
+            logger.info(
+                "Inherited series assets into episode | series_id=%r script_id=%r characters=%r scenes=%r props=%r",
+                series.id,
+                episode.id,
+                len(episode.characters),
+                len(episode.scenes),
+                len(episode.props),
+            )
+        return changed
+
+    def ensure_episode_inherits_series_assets(self, script_id: str) -> Optional[Script]:
+        with self._save_lock:
+            episode = self.scripts.get(script_id)
+            if not episode:
+                return None
+            if self._inherit_series_assets_into_episode_unlocked(episode):
+                self._save_data()
+            return episode
 
     # ============================================================
     # File Import & Episode Splitting
