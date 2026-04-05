@@ -11,10 +11,12 @@ import {
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
 
 export default function StoryboardComposer() {
+    const { t } = useI18n();
     const currentProject = useProjectStore((state) => state.currentProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
     const setSelectedFrameId = useProjectStore((state) => state.setSelectedFrameId);
@@ -46,12 +48,12 @@ export default function StoryboardComposer() {
 
         const text = currentProject.originalText;
         if (!text || !text.trim()) {
-            alert("请先输入剧本文本");
+            alert(t("storyboardComposer.enterScriptFirst"));
             return;
         }
 
         if (currentProject.frames?.length > 0) {
-            if (!confirm("这将覆盖当前的所有分镜帧。是否继续？")) return;
+            if (!confirm(t("storyboardComposer.overwriteConfirm"))) return;
         }
 
         setIsAnalyzing(true);
@@ -63,9 +65,9 @@ export default function StoryboardComposer() {
                 const frameCount = response.frames?.length || 0;
                 if (frameCount > 0) {
                     updateProject(currentProject.id, response);
-                    alert(`成功生成 ${frameCount} 个分镜帧！`);
+                    alert(t("storyboardComposer.generatedCount", { count: frameCount }));
                 } else {
-                    alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+                    alert(t("storyboardComposer.noValidFrames"));
                 }
                 return;
             }
@@ -79,16 +81,16 @@ export default function StoryboardComposer() {
                         const updatedProject = await api.getProject(currentProject.id);
                         const frameCount = updatedProject.frames?.length || 0;
                         updateProject(currentProject.id, updatedProject);
-                        alert(frameCount > 0 ? `成功生成 ${frameCount} 个分镜帧！` : "AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+                        alert(frameCount > 0 ? t("storyboardComposer.generatedCount", { count: frameCount }) : t("storyboardComposer.noValidFrames"));
                         setIsAnalyzing(false);
                     } else if (status.status === "failed") {
                         clearInterval(pollInterval);
-                        alert(`分镜生成失败：${status.error || "请稍后重试。"}`);
+                        alert(t("storyboardComposer.generateFailed", { error: status.error || t("storyboardComposer.retryLater") }));
                         setIsAnalyzing(false);
                     }
                 } catch (pollError: any) {
                     clearInterval(pollInterval);
-                    alert(`分镜任务轮询失败：${pollError?.message || "网络错误"}`);
+                    alert(t("storyboardComposer.pollFailed", { error: pollError?.message || t("storyboardComposer.networkError") }));
                     setIsAnalyzing(false);
                 }
             }, 2000);
@@ -96,9 +98,9 @@ export default function StoryboardComposer() {
             console.error("Analyze to storyboard failed:", error);
             const detail = extractErrorDetail(error, "");
             if (detail.includes("JSON") || detail.includes("格式")) {
-                alert(`分镜生成失败：AI 模型输出格式异常。\n\n这是模型偶发的格式问题，通常重试即可解决。请再次点击生成按钮。`);
+                alert(t("storyboardComposer.invalidFormat"));
             } else {
-                alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
+                alert(t("storyboardComposer.generateFailed", { error: detail || t("storyboardComposer.checkConsole") }));
             }
             setIsAnalyzing(false);
         }

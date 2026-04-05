@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Plus, Trash2, X } from "lucide-react";
 import { api, crudApi } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
+import { useI18n } from "@/i18n/provider";
 
 interface ScriptNode {
     type: "character" | "scene" | "prop";
@@ -19,6 +20,7 @@ interface ScriptNode {
 }
 
 export default function ScriptProcessor() {
+    const { t } = useI18n();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const analyzeProject = useProjectStore((state) => state.analyzeProject);
@@ -73,15 +75,15 @@ export default function ScriptProcessor() {
         } catch (error: any) {
             console.error("Failed to analyze script:", error);
             // Extract error message from axios response or error object
-            const errorMessage = error?.response?.data?.detail || error?.message || "未知错误";
-            alert(`剧本分析失败: ${errorMessage}`);
+            const errorMessage = error?.response?.data?.detail || error?.message || t("scriptProcessor.unknownError");
+            alert(t("scriptProcessor.analyzeFailed", { error: errorMessage }));
         }
     };
 
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm(`Are you sure you want to delete ${node.name}?`)) return;
+        if (!confirm(t("scriptProcessor.deleteConfirm", { name: node.name }))) return;
 
         try {
             if (node.type === "character" && node.id) {
@@ -96,7 +98,7 @@ export default function ScriptProcessor() {
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to delete node:", error);
-            alert("Failed to delete node");
+            alert(t("scriptProcessor.deleteFailed"));
         }
     };
 
@@ -116,7 +118,7 @@ export default function ScriptProcessor() {
             setIsCreateDialogOpen(false);
         } catch (error) {
             console.error("Failed to create node:", error);
-            alert("Failed to create node");
+            alert(t("scriptProcessor.createFailed"));
         }
     };
 
@@ -133,7 +135,7 @@ export default function ScriptProcessor() {
                 <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20">
                     <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
                         <Sparkles className="text-primary" size={18} />
-                        剧本编辑器
+                        {t("scriptProcessor.title")}
                     </h2>
                     <div className="flex gap-2">
                         <button
@@ -142,7 +144,7 @@ export default function ScriptProcessor() {
                             className="glass-button px-4 py-1.5 text-sm flex items-center gap-2 text-primary border-primary/30 hover:bg-primary/10"
                         >
                             {isAnalyzing ? <Wand2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
-                            {isAnalyzing ? "智能分析中..." : "提取实体"}
+                            {isAnalyzing ? t("scriptProcessor.analyzing") : t("scriptProcessor.extractEntities")}
                         </button>
                         <button
                             onClick={() => setShowPanel(!showPanel)}
@@ -163,7 +165,7 @@ export default function ScriptProcessor() {
                                 updateProject(currentProject.id, { originalText: newText });
                             }
                         }}
-                        placeholder="在此粘贴小说或剧本内容..."
+                        placeholder={t("scriptProcessor.scriptPlaceholder")}
                         className="w-full h-full bg-transparent text-gray-300 font-mono text-base leading-relaxed resize-none focus:outline-none"
                         spellCheck={false}
                     />
@@ -181,13 +183,13 @@ export default function ScriptProcessor() {
                     >
                         <div className="p-4 border-b border-white/10 flex justify-between items-center">
                             <div>
-                                <h3 className="font-bold text-white">实体识别面板</h3>
-                                <p className="text-xs text-gray-500">已识别 {nodes.length} 个关键要素</p>
+                                <h3 className="font-bold text-white">{t("scriptProcessor.entityPanel")}</h3>
+                                <p className="text-xs text-gray-500">{t("scriptProcessor.identifiedCount", { count: nodes.length })}</p>
                             </div>
                             <button
                                 onClick={() => setIsCreateDialogOpen(true)}
                                 className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-colors"
-                                title="Add Entity"
+                                title={t("scriptProcessor.addEntity")}
                             >
                                 <Plus size={16} />
                             </button>
@@ -196,7 +198,7 @@ export default function ScriptProcessor() {
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                             {nodes.length === 0 && !isAnalyzing && (
                                 <div className="text-center text-gray-500 mt-10 text-sm">
-                                    点击“提取实体”开始分析
+                                    {t("scriptProcessor.emptyHint")}
                                 </div>
                             )}
 
