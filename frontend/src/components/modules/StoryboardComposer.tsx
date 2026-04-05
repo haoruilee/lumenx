@@ -343,7 +343,7 @@ export default function StoryboardComposer() {
 
         } catch (error) {
             console.error("Render failed:", error);
-            alert("Render failed. See console for details.");
+            alert(t("storyboardComposer.renderFailed"));
         } finally {
             removeRenderingFrame(frame.id);
         }
@@ -354,30 +354,30 @@ export default function StoryboardComposer() {
             {/* Top Toolbar */}
             <div className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-between bg-black/20">
                 <h3 className="font-bold text-sm flex items-center gap-2">
-                    <Layout size={16} className="text-primary" /> Storyboard Frames
+                    <Layout size={16} className="text-primary" /> {t("storyboardComposer.title")}
                 </h3>
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowScriptOverlay(true)}
                         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white px-2.5 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
-                        title="查看原始脚本"
+                        title={t("storyboardComposer.viewScript")}
                     >
                         <FileText size={14} />
-                        查看脚本
+                        {t("storyboardComposer.viewScript")}
                     </button>
                     <div className="w-px h-4 bg-white/10" />
                     <button
                         onClick={handleAnalyzeToStoryboard}
                         disabled={isAnalyzing}
                         className="flex items-center gap-1.5 text-xs bg-primary/80 hover:bg-primary px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50"
-                        title="从剧本生成分镜帧"
+                        title={t("storyboardComposer.generateStoryboard")}
                     >
                         {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                        {isAnalyzing ? "生成中..." : "生成分镜"}
+                        {isAnalyzing ? t("assetGrid.generating") : t("storyboardComposer.generateStoryboard")}
                     </button>
                     <div className="w-px h-4 bg-white/10" />
                     <span className="text-xs text-gray-500 font-mono">
-                        {currentProject?.frames?.length || 0} Frames
+                        {t("storyboardComposer.framesCount", { count: currentProject?.frames?.length || 0 })}
                     </span>
                 </div>
             </div>
@@ -392,7 +392,7 @@ export default function StoryboardComposer() {
                                 className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-lg transition-colors border border-dashed border-white/10 hover:border-white/30"
                             >
                                 <Plus size={16} />
-                                <span className="text-sm font-medium">Insert Frame at Start</span>
+                                <span className="text-sm font-medium">{t("storyboardComposer.insertAtStart")}</span>
                             </button>
                         </div>
 
@@ -425,7 +425,7 @@ export default function StoryboardComposer() {
                                         ) : (
                                             <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 gap-2">
                                                 <ImageIcon size={24} className="opacity-20" />
-                                                <span className="text-[10px]">No Image</span>
+                                                <span className="text-[10px]">{t("storyboardComposer.noImage")}</span>
                                             </div>
                                         )
 
@@ -447,7 +447,7 @@ export default function StoryboardComposer() {
                                                     }
                                                 }}
                                                 className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold flex items-center gap-1 pointer-events-auto"
-                                                title={frame.locked ? "解锁" : "锁定"}
+                                                title={frame.locked ? t("storyboardComposer.unlock") : t("storyboardComposer.lock")}
                                             >
                                                 {frame.locked ? <Unlock size={14} /> : <Lock size={14} />}
                                             </button>
@@ -458,7 +458,7 @@ export default function StoryboardComposer() {
                                                     {renderingFrames.has(frame.id) ? (
                                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 rounded-lg">
                                                             <Loader2 size={14} className="animate-spin text-white" />
-                                                            <span className="text-xs text-white">Generating...</span>
+                                                            <span className="text-xs text-white">{t("assetGrid.generating")}</span>
                                                         </div>
                                                     ) : (
                                                         <>
@@ -606,7 +606,7 @@ export default function StoryboardComposer() {
                             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20">
                                 <div className="flex items-center gap-3">
                                     <FileText size={18} className="text-primary" />
-                                    <h3 className="text-sm font-bold text-white">原始脚本</h3>
+                                    <h3 className="text-sm font-bold text-white">{t("storyboardComposer.originalScript")}</h3>
                                 </div>
                                 <button
                                     onClick={() => setShowScriptOverlay(false)}
@@ -617,7 +617,7 @@ export default function StoryboardComposer() {
                             </div>
                             <div className="flex-1 overflow-y-auto p-6">
                                 <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
-                                    {currentProject?.originalText || "暂无脚本内容"}
+                                    {currentProject?.originalText || t("storyboardComposer.noScript")}
                                 </pre>
                             </div>
                         </motion.div>

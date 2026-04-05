@@ -8,6 +8,7 @@ import {
 import clsx from "clsx";
 import LumenXBranding from "./LumenXBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
+import { useI18n } from "@/i18n/provider";
 
 interface Step {
     id: string;
@@ -25,6 +26,7 @@ interface PipelineSidebarProps {
 }
 
 export default function PipelineSidebar({ activeStep, onStepChange, steps, breadcrumbSegments, headerActions }: PipelineSidebarProps) {
+    const { t } = useI18n();
     const handleBack = () => {
         if (!breadcrumbSegments) return;
         if (breadcrumbSegments.length >= 2 && breadcrumbSegments[breadcrumbSegments.length - 2].hash) {
@@ -51,7 +53,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                             <button
                                 onClick={handleBack}
                                 className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
-                                title="返回"
+                                title={t("common.backToHome")}
                             >
                                 <ChevronLeft size={16} />
                             </button>
@@ -148,7 +150,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                 <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 border border-white/5">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent" />
                     <div className="flex flex-col">
-                        <span className="text-sm font-medium text-white">Project Alpha</span>
+                        <span className="text-sm font-medium text-white">{t("pipelineSidebar.projectAlpha")}</span>
                         <span className="text-xs text-gray-500">v0.1.0</span>
                     </div>
                 </div>

@@ -232,7 +232,7 @@ export default function ScriptProcessor() {
                                             <button
                                                 onClick={(e) => handleDeleteNode(node, e)}
                                                 className="p-1 hover:bg-red-500/20 text-gray-500 hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                                title="Delete"
+                                                title={t("scriptProcessor.delete")}
                                             >
                                                 <Trash2 size={12} />
                                             </button>
@@ -268,14 +268,14 @@ export default function ScriptProcessor() {
                                         </span>
                                         <h2 className="text-xl font-bold text-white">{selectedNode.name}</h2>
                                     </div>
-                                    <p className="text-sm text-gray-400">实体属性配置</p>
+                                    <p className="text-sm text-gray-400">{t("scriptProcessor.entityConfig")}</p>
                                 </div>
                                 <button onClick={() => setSelectedNode(null)} className="text-gray-500 hover:text-white">✕</button>
                             </div>
 
                             <div className="p-6 space-y-4">
                                 <div>
-                                    <label className="block text-xs text-gray-500 mb-1">视觉描述 (Visual Description)</label>
+                                    <label className="block text-xs text-gray-500 mb-1">{t("scriptProcessor.visualDescription")}</label>
                                     <textarea
                                         value={selectedNode.desc}
                                         onChange={e => handleNodeUpdate({ ...selectedNode, desc: e.target.value })}
@@ -286,7 +286,7 @@ export default function ScriptProcessor() {
                                 {selectedNode.type === "character" && (
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs text-gray-500 mb-1">年龄 (Age)</label>
+                                            <label className="block text-xs text-gray-500 mb-1">{t("scriptProcessor.age")}</label>
                                             <input
                                                 type="text"
                                                 value={selectedNode.age || ""}
@@ -296,7 +296,7 @@ export default function ScriptProcessor() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-gray-500 mb-1">性别 (Gender)</label>
+                                            <label className="block text-xs text-gray-500 mb-1">{t("scriptProcessor.gender")}</label>
                                             <input
                                                 type="text"
                                                 value={selectedNode.gender || ""}
@@ -306,7 +306,7 @@ export default function ScriptProcessor() {
                                             />
                                         </div>
                                         <div className="col-span-2">
-                                            <label className="block text-xs text-gray-500 mb-1">服装 (Clothing)</label>
+                                            <label className="block text-xs text-gray-500 mb-1">{t("scriptProcessor.clothing")}</label>
                                             <input
                                                 type="text"
                                                 value={selectedNode.clothing || ""}
@@ -320,7 +320,7 @@ export default function ScriptProcessor() {
 
                                 {selectedNode.type !== "prop" && (
                                     <div>
-                                        <label className="block text-xs text-gray-500 mb-2">视觉权重 (Visual Weight)</label>
+                                        <label className="block text-xs text-gray-500 mb-2">{t("scriptProcessor.visualWeight")}</label>
                                         <div className="flex gap-2">
                                             {[1, 2, 3, 4, 5].map(w => (
                                                 <button
@@ -336,7 +336,7 @@ export default function ScriptProcessor() {
                                             ))}
                                         </div>
                                         <p className="text-[10px] text-gray-600 mt-1 text-center">
-                                            1: 背景路人 — 3: 重要配角 — 5: 核心主角 (需LoRA训练)
+                                            {t("scriptProcessor.visualWeightHint")}
                                         </p>
                                     </div>
                                 )}
@@ -372,7 +372,7 @@ export default function ScriptProcessor() {
                                                 setSelectedNode(null);
                                             } catch (error) {
                                                 console.error("Failed to update asset attributes:", error);
-                                                alert("保存失败，请重试");
+                                                alert(t("scriptProcessor.saveFailed"));
                                             }
                                         } else {
                                             setSelectedNode(null);
@@ -380,7 +380,7 @@ export default function ScriptProcessor() {
                                     }}
                                     className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-bold flex items-center gap-2"
                                 >
-                                    <Save size={14} /> 保存配置
+                                    <Save size={14} /> {t("scriptProcessor.saveConfig")}
                                 </button>
                             </div>
                         </motion.div>
@@ -401,55 +401,56 @@ export default function ScriptProcessor() {
 }
 
 function CreateEntityDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (data: any) => void }) {
+    const { t } = useI18n();
     const [name, setName] = useState("");
     const [desc, setDesc] = useState("");
     const [type, setType] = useState<"character" | "scene" | "prop">("character");
 
     const handleSubmit = () => {
-        if (!name.trim()) return alert("Name is required");
+        if (!name.trim()) return alert(t("scriptProcessor.nameRequired"));
         onCreate({ name, description: desc, type });
     };
 
     return (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
             <div className="w-[400px] bg-[#1a1a1a] border border-white/10 rounded-xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                <h3 className="font-bold text-white">Add New Entity</h3>
+                <h3 className="font-bold text-white">{t("scriptProcessor.addEntity")}</h3>
 
                 <div className="flex gap-2 p-1 bg-black/20 rounded-lg">
-                    {(["character", "scene", "prop"] as const).map(t => (
+                    {(["character", "scene", "prop"] as const).map(typeValue => (
                         <button
-                            key={t}
-                            onClick={() => setType(t)}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded capitalize ${type === t ? "bg-primary text-white" : "text-gray-500 hover:text-white"}`}
+                            key={typeValue}
+                            onClick={() => setType(typeValue)}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded capitalize ${type === typeValue ? "bg-primary text-white" : "text-gray-500 hover:text-white"}`}
                         >
-                            {t}
+                            {t(`scriptProcessor.type.${typeValue}` as any)}
                         </button>
                     ))}
                 </div>
 
                 <div>
-                    <label className="text-xs text-gray-500">Name</label>
+                    <label className="text-xs text-gray-500">{t("scriptProcessor.name")}</label>
                     <input
                         className="glass-input w-full"
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        placeholder="Entity Name"
+                        placeholder={t("scriptProcessor.entityName")}
                     />
                 </div>
 
                 <div>
-                    <label className="text-xs text-gray-500">Description</label>
+                    <label className="text-xs text-gray-500">{t("scriptProcessor.description")}</label>
                     <textarea
                         className="glass-input w-full h-24 resize-none"
                         value={desc}
                         onChange={e => setDesc(e.target.value)}
-                        placeholder="Visual description..."
+                        placeholder={t("scriptProcessor.visualDescriptionPlaceholder")}
                     />
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={onClose} className="px-4 py-2 text-xs text-gray-400 hover:text-white">Cancel</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary text-white rounded text-xs font-bold">Create</button>
+                    <button onClick={onClose} className="px-4 py-2 text-xs text-gray-400 hover:text-white">{t("common.cancel")}</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary text-white rounded text-xs font-bold">{t("common.create")}</button>
                 </div>
             </div>
         </div>
