@@ -19,6 +19,7 @@ import ModelSettingsModal from "@/components/common/ModelSettingsModal";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
 import PromptConfigModal from "@/components/project/PromptConfigModal";
 import dynamic from "next/dynamic";
+import { bi } from "@/lib/bilingual";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
@@ -36,15 +37,15 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
     };
 
     const steps = [
-        { id: "script", label: "1. Script", icon: BookOpen },
-        { id: "art_direction", label: "2. Art Direction", icon: Palette },
-        { id: "assets", label: "3. Assets", icon: Users },
-        { id: "storyboard", label: "4. Storyboard", icon: Layout },
-        { id: "motion", label: "5. Motion", icon: Video },
-        { id: "assembly", label: "6. Assembly", icon: Film },
-        { id: "audio", label: "7. Voice", icon: Mic, comingSoon: true },
-        { id: "mix", label: "8. Final Mix", icon: Music, comingSoon: true },
-        { id: "export", label: "9. Export", icon: Share2, comingSoon: true },
+        { id: "script", label: bi("1. 剧本", "1. Script"), icon: BookOpen },
+        { id: "art_direction", label: bi("2. 美术方向", "2. Art Direction"), icon: Palette },
+        { id: "assets", label: bi("3. 资产", "3. Assets"), icon: Users },
+        { id: "storyboard", label: bi("4. 分镜", "4. Storyboard"), icon: Layout },
+        { id: "motion", label: bi("5. 动态", "5. Motion"), icon: Video },
+        { id: "assembly", label: bi("6. 合成", "6. Assembly"), icon: Film },
+        { id: "audio", label: bi("7. 配音", "7. Voice"), icon: Mic, comingSoon: true },
+        { id: "mix", label: bi("8. 总混", "8. Final Mix"), icon: Music, comingSoon: true },
+        { id: "export", label: bi("9. 导出", "9. Export"), icon: Share2, comingSoon: true },
     ];
 
     useEffect(() => {
@@ -60,7 +61,7 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
                         onClick={handleBackToHome}
                         className="text-primary hover:underline"
                     >
-                        返回项目列表
+                        {bi("返回项目列表", "Back to Projects")}
                     </button>
                 </div>
             </div>
@@ -74,21 +75,21 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
             <button
                 onClick={() => setEnvDialogOpen(true)}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="API Key & OSS 配置"
+                title={bi("API Key 与 OSS 配置", "API Key & OSS Configuration")}
             >
                 <Key size={16} className="text-gray-400 group-hover:text-green-400 transition-colors" />
             </button>
             <button
                 onClick={() => setPromptConfigOpen(true)}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Prompt Configuration"
+                title={bi("提示词配置", "Prompt Configuration")}
             >
                 <MessageSquareCode size={16} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
             </button>
             <button
                 onClick={() => setModelSettingsOpen(true)}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Model Settings"
+                title={bi("模型设置", "Model Settings")}
             >
                 <Settings size={16} className="text-gray-400 group-hover:text-white transition-colors" />
             </button>

@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import type { Series, Character, Scene, Prop, Project } from "@/store/projectStore";
 import AssetCard from "@/components/common/AssetCard";
 import SeriesSidebar, { type SidebarItem } from "./SeriesSidebar";
+import { bi } from "@/lib/bilingual";
 
 const SeriesModelSettingsModal = dynamic(() => import("./SeriesModelSettingsModal"), { ssr: false });
 const SeriesPromptConfigModal = dynamic(() => import("./SeriesPromptConfigModal"), { ssr: false });
@@ -20,9 +21,15 @@ interface SeriesDetailPageProps {
 type AssetTab = "characters" | "scenes" | "props";
 
 const ASSET_LABELS: Record<AssetTab, string> = {
-  characters: "角色",
-  scenes: "场景",
-  props: "道具",
+  characters: bi("角色", "Characters"),
+  scenes: bi("场景", "Scenes"),
+  props: bi("道具", "Props"),
+};
+
+const EMPTY_ASSET_LABELS: Record<AssetTab, string> = {
+  characters: bi("暂无角色资产", "No character assets yet"),
+  scenes: bi("暂无场景资产", "No scene assets yet"),
+  props: bi("暂无道具资产", "No prop assets yet"),
 };
 
 export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
@@ -127,6 +134,7 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-gray-400">加载中...</div>
+        <div className="text-xs text-gray-600 mt-2">Loading...</div>
       </div>
     );
   }
@@ -136,8 +144,8 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <p className="text-gray-400 mb-4">系列未找到</p>
-          <a href="#/" className="text-primary hover:underline">返回首页</a>
+          <p className="text-gray-400 mb-4">{bi("系列未找到", "Series not found")}</p>
+          <a href="#/" className="text-primary hover:underline">{bi("返回首页", "Back to Home")}</a>
         </div>
       </div>
     );
@@ -261,7 +269,7 @@ function AssetContentPanel({
           </span>
         </h2>
         <p className="text-xs text-gray-600 mt-1">
-          在集数编辑器中生成的资产将自动共享到这里
+          {bi("在集数编辑器中生成的资产将自动共享到这里", "Assets created inside episode editor will be shared here automatically")}
         </p>
       </div>
 
@@ -276,8 +284,8 @@ function AssetContentPanel({
             >
               <ImageIcon size={28} className="text-gray-600" />
             </motion.div>
-            <p className="text-sm font-medium">暂无{label}资产</p>
-            <p className="text-xs text-gray-600 mt-1">资产将在集数中生成后共享到这里</p>
+            <p className="text-sm font-medium">{EMPTY_ASSET_LABELS[tab]}</p>
+            <p className="text-xs text-gray-600 mt-1">{bi("资产将在集数中生成后共享到这里", "Assets generated in episodes will appear here")}</p>
           </div>
         ) : (
           <motion.div
@@ -344,7 +352,7 @@ function EpisodeContentPanel({
             </h2>
           </div>
           <p className="text-xs text-gray-500">
-            {frames.length} 分镜
+            {bi(`${frames.length} 分镜`, `${frames.length} storyboard frames`)}
           </p>
         </div>
         <motion.button
@@ -354,7 +362,7 @@ function EpisodeContentPanel({
           className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-primary/20 hover:shadow-primary/30"
         >
           <Play size={14} />
-          进入编辑器
+          {bi("进入编辑器", "Open Editor")}
           <ChevronRight size={14} />
         </motion.button>
       </div>
@@ -370,8 +378,8 @@ function EpisodeContentPanel({
             >
               <Play size={28} className="text-gray-600" />
             </motion.div>
-            <p className="text-sm font-medium">暂无分镜</p>
-            <p className="text-xs text-gray-600 mt-1">进入编辑器开始创作</p>
+            <p className="text-sm font-medium">{bi("暂无分镜", "No storyboard yet")}</p>
+            <p className="text-xs text-gray-600 mt-1">{bi("进入编辑器开始创作", "Open the editor to start creating")}</p>
           </div>
         ) : (
           <motion.div

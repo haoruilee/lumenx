@@ -12,6 +12,7 @@ import AppShell from "@/components/layout/AppShell";
 import type { GlobalTab } from "@/components/layout/GlobalSidebar";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
+import { bi } from "@/lib/bilingual";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
@@ -52,7 +53,7 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl"
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-display font-bold text-white">新建系列</h2>
+          <h2 className="text-xl font-display font-bold text-white">{bi("新建系列", "Create Series")}</h2>
           <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
             <X size={20} className="text-gray-400" />
           </button>
@@ -60,22 +61,22 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">系列标题 *</label>
+            <label className="block text-sm text-gray-400 mb-1">{bi("系列标题", "Series Title")} *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：我的漫剧系列"
+              placeholder={bi("例如：我的漫剧系列", "e.g. My Motion Comic Series")}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors"
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">描述（可选）</label>
+            <label className="block text-sm text-gray-400 mb-1">{bi("描述（可选）", "Description (Optional)")}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="简要描述这个系列..."
+              placeholder={bi("简要描述这个系列...", "Briefly describe this series...")}
               rows={3}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors resize-none"
             />
@@ -87,14 +88,14 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           >
-            取消
+            {bi("取消", "Cancel")}
           </button>
           <button
             onClick={handleCreate}
             disabled={!title.trim() || isCreating}
             className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isCreating ? "创建中..." : "创建系列"}
+            {isCreating ? bi("创建中...", "Creating...") : bi("创建系列", "Create Series")}
           </button>
         </div>
       </motion.div>
@@ -164,7 +165,7 @@ function SeriesCard({
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium">
-              系列
+              {bi("系列", "Series")}
             </span>
             <h3 className="text-lg font-display font-bold text-white">
               {series.title}
@@ -174,11 +175,11 @@ function SeriesCard({
             <p className="text-sm text-gray-400 mb-2 line-clamp-1">{series.description}</p>
           )}
           <div className="flex items-center gap-3 text-xs text-gray-400">
-            <span>集数 <span className="text-white font-medium">{series.episode_ids?.length || 0}</span></span>
+            <span>{bi("集数", "Episodes")} <span className="text-white font-medium">{series.episode_ids?.length || 0}</span></span>
             <span className="text-gray-600">·</span>
-            <span>角色 <span className="text-white font-medium">{series.characters?.length || 0}</span></span>
+            <span>{bi("角色", "Characters")} <span className="text-white font-medium">{series.characters?.length || 0}</span></span>
             <span className="text-gray-600">·</span>
-            <span>场景 <span className="text-white font-medium">{series.scenes?.length || 0}</span></span>
+            <span>{bi("场景", "Scenes")} <span className="text-white font-medium">{series.scenes?.length || 0}</span></span>
           </div>
         </div>
 
@@ -211,7 +212,7 @@ function SeriesCard({
                 >
                   <span className="text-[10px] text-primary font-mono font-bold block">EP{ep.episode_number || "?"}</span>
                   <span className="text-xs text-white truncate block mt-0.5">{ep.title}</span>
-                  <span className="text-[10px] text-gray-500 block mt-0.5">{ep.frames?.length || 0} 分镜</span>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">{bi(`${ep.frames?.length || 0} 分镜`, `${ep.frames?.length || 0} frames`)}</span>
                 </button>
               ))}
 
@@ -222,7 +223,7 @@ function SeriesCard({
                     type="text"
                     value={inlineTitle}
                     onChange={(e) => setInlineTitle(e.target.value)}
-                    placeholder="集数标题..."
+                    placeholder={bi("集数标题...", "Episode title...")}
                     className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
@@ -237,13 +238,13 @@ function SeriesCard({
                       disabled={!inlineTitle.trim() || isAdding}
                       className="flex-1 text-[10px] text-primary hover:text-white transition-colors disabled:opacity-50"
                     >
-                      {isAdding ? "..." : "确定"}
+                      {isAdding ? "..." : bi("确定", "Confirm")}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowInlineInput(false); setInlineTitle(""); }}
                       className="text-[10px] text-gray-500 hover:text-white transition-colors"
                     >
-                      取消
+                      {bi("取消", "Cancel")}
                     </button>
                   </div>
                 </div>
@@ -253,7 +254,7 @@ function SeriesCard({
                   className="flex-shrink-0 w-28 p-2 rounded-lg border border-dashed border-gray-600 hover:border-gray-400 bg-white/[0.02] hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-1"
                 >
                   <Plus size={14} className="text-gray-500" />
-                  <span className="text-[10px] text-gray-500">添加集数</span>
+                  <span className="text-[10px] text-gray-500">{bi("添加集数", "Add Episode")}</span>
                 </button>
               )}
             </>
