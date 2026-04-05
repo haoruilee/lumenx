@@ -12,7 +12,7 @@ import AppShell from "@/components/layout/AppShell";
 import type { GlobalTab } from "@/components/layout/GlobalSidebar";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
-import { bi } from "@/lib/bilingual";
+import { useI18n } from "@/i18n/provider";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
@@ -22,6 +22,7 @@ const AssetLibraryPage = dynamic(() => import("@/components/library/AssetLibrary
 
 // ── Create Series Dialog ──
 function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { t } = useI18n();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -53,7 +54,7 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl"
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-display font-bold text-white">{bi("新建系列", "Create Series")}</h2>
+          <h2 className="text-xl font-display font-bold text-white">{t("home.createSeries")}</h2>
           <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
             <X size={20} className="text-gray-400" />
           </button>
@@ -61,22 +62,22 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">{bi("系列标题", "Series Title")} *</label>
+            <label className="block text-sm text-gray-400 mb-1">{t("home.seriesTitle")} *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={bi("例如：我的漫剧系列", "e.g. My Motion Comic Series")}
+              placeholder={t("home.seriesTitlePlaceholder")}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors"
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">{bi("描述（可选）", "Description (Optional)")}</label>
+            <label className="block text-sm text-gray-400 mb-1">{t("home.seriesDescriptionOptional")}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder={bi("简要描述这个系列...", "Briefly describe this series...")}
+              placeholder={t("home.seriesDescriptionPlaceholder")}
               rows={3}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-primary transition-colors resize-none"
             />
@@ -88,14 +89,14 @@ function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           >
-            {bi("取消", "Cancel")}
+            {t("common.cancel")}
           </button>
           <button
             onClick={handleCreate}
             disabled={!title.trim() || isCreating}
             className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isCreating ? bi("创建中...", "Creating...") : bi("创建系列", "Create Series")}
+            {isCreating ? t("common.creating") : t("home.createSeries")}
           </button>
         </div>
       </motion.div>
@@ -117,6 +118,7 @@ function SeriesCard({
   episodesLoading: boolean;
   onEpisodesChange: (seriesId: string) => void;
 }) {
+  const { t } = useI18n();
   const [inlineTitle, setInlineTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [showInlineInput, setShowInlineInput] = useState(false);
@@ -127,7 +129,7 @@ function SeriesCard({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`确定要删除系列"${series.title}"吗？这不会删除其中的项目。`)) {
+    if (confirm(t("home.deleteSeriesConfirm", { title: series.title }))) {
       onDelete(series.id);
     }
   };
@@ -165,7 +167,7 @@ function SeriesCard({
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium">
-              {bi("系列", "Series")}
+              {t("home.seriesBadge")}
             </span>
             <h3 className="text-lg font-display font-bold text-white">
               {series.title}
@@ -175,11 +177,11 @@ function SeriesCard({
             <p className="text-sm text-gray-400 mb-2 line-clamp-1">{series.description}</p>
           )}
           <div className="flex items-center gap-3 text-xs text-gray-400">
-            <span>{bi("集数", "Episodes")} <span className="text-white font-medium">{series.episode_ids?.length || 0}</span></span>
+            <span>{t("home.episodes")} <span className="text-white font-medium">{series.episode_ids?.length || 0}</span></span>
             <span className="text-gray-600">·</span>
-            <span>{bi("角色", "Characters")} <span className="text-white font-medium">{series.characters?.length || 0}</span></span>
+            <span>{t("home.characters")} <span className="text-white font-medium">{series.characters?.length || 0}</span></span>
             <span className="text-gray-600">·</span>
-            <span>{bi("场景", "Scenes")} <span className="text-white font-medium">{series.scenes?.length || 0}</span></span>
+            <span>{t("home.scenes")} <span className="text-white font-medium">{series.scenes?.length || 0}</span></span>
           </div>
         </div>
 
@@ -212,7 +214,7 @@ function SeriesCard({
                 >
                   <span className="text-[10px] text-primary font-mono font-bold block">EP{ep.episode_number || "?"}</span>
                   <span className="text-xs text-white truncate block mt-0.5">{ep.title}</span>
-                  <span className="text-[10px] text-gray-500 block mt-0.5">{bi(`${ep.frames?.length || 0} 分镜`, `${ep.frames?.length || 0} frames`)}</span>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">{t("home.framesCount", { count: ep.frames?.length || 0 })}</span>
                 </button>
               ))}
 
@@ -223,7 +225,7 @@ function SeriesCard({
                     type="text"
                     value={inlineTitle}
                     onChange={(e) => setInlineTitle(e.target.value)}
-                    placeholder={bi("集数标题...", "Episode title...")}
+                    placeholder={t("home.episodeTitlePlaceholder")}
                     className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
@@ -238,13 +240,13 @@ function SeriesCard({
                       disabled={!inlineTitle.trim() || isAdding}
                       className="flex-1 text-[10px] text-primary hover:text-white transition-colors disabled:opacity-50"
                     >
-                      {isAdding ? "..." : bi("确定", "Confirm")}
+                      {isAdding ? "..." : t("common.confirm")}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowInlineInput(false); setInlineTitle(""); }}
                       className="text-[10px] text-gray-500 hover:text-white transition-colors"
                     >
-                      {bi("取消", "Cancel")}
+                      {t("common.cancel")}
                     </button>
                   </div>
                 </div>
@@ -254,7 +256,7 @@ function SeriesCard({
                   className="flex-shrink-0 w-28 p-2 rounded-lg border border-dashed border-gray-600 hover:border-gray-400 bg-white/[0.02] hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-1"
                 >
                   <Plus size={14} className="text-gray-500" />
-                  <span className="text-[10px] text-gray-500">{bi("添加集数", "Add Episode")}</span>
+                  <span className="text-[10px] text-gray-500">{t("home.addEpisode")}</span>
                 </button>
               )}
             </>
@@ -270,7 +272,7 @@ function SeriesCard({
         </div>
         <div className="flex items-center gap-1 text-primary text-xs font-medium">
           <Play size={14} />
-          <span>打开系列</span>
+          <span>{t("home.openSeries")}</span>
         </div>
       </div>
     </motion.div>
@@ -279,6 +281,7 @@ function SeriesCard({
 
 // ── Episode Breadcrumb Wrapper ──
 function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; episodeId: string }) {
+  const { t } = useI18n();
   const [seriesTitle, setSeriesTitle] = useState<string>("");
   const [episodeNumber, setEpisodeNumber] = useState<number | null>(null);
 
@@ -301,8 +304,8 @@ function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; e
 
   const segments = [
     { label: "LumenX", hash: "#/" },
-    { label: seriesTitle || "系列", hash: `#/series/${seriesId}` },
-    { label: episodeNumber != null ? `第${episodeNumber}集` : "集数" },
+    { label: seriesTitle || t("home.seriesFallback"), hash: `#/series/${seriesId}` },
+    { label: episodeNumber != null ? `EP${episodeNumber}` : t("home.episodeFallback") },
   ];
 
   return (
@@ -312,6 +315,7 @@ function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; e
 
 // ── Main Component ──
 export default function Home() {
+  const { t } = useI18n();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSeriesDialogOpen, setIsSeriesDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -401,7 +405,6 @@ export default function Home() {
     return () => document.removeEventListener("click", handleClick);
   }, [showCreateDropdown]);
 
-  // 监听 hash 变化
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
@@ -460,17 +463,14 @@ export default function Home() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 项目详情页 — 全屏，无 GlobalSidebar
   if (currentView === 'project' && projectId) {
     return <ProjectClient id={projectId} />;
   }
 
-  // 系列集数编辑 — 全屏，BreadcrumbBar 内嵌在 ProjectClient
   if (currentView === 'series-episode' && seriesId && episodeId) {
     return <EpisodeBreadcrumbWrapper seriesId={seriesId} episodeId={episodeId} />;
   }
 
-  // 系列详情页 — 全屏，自带 BreadcrumbBar
   if (currentView === 'series' && seriesId) {
     return <SeriesDetailPage seriesId={seriesId} />;
   }
@@ -511,24 +511,24 @@ export default function Home() {
             className="flex flex-col items-center justify-center py-20"
           >
             <FolderOpen size={64} className="text-gray-600 mb-4" />
-            <h3 className="text-xl font-medium text-gray-400 mb-2">还没有项目</h3>
-            <p className="text-gray-500 mb-8">选择一种方式开始创作</p>
+            <h3 className="text-xl font-medium text-gray-400 mb-2">{t("home.emptyTitle")}</h3>
+            <p className="text-gray-500 mb-8">{t("home.emptyDescription")}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-xl w-full">
               <button
                 onClick={() => setIsSeriesDialogOpen(true)}
                 className="glass-panel p-6 rounded-xl border border-blue-500/30 hover:border-blue-500/60 transition-all group text-left"
               >
                 <Library size={32} className="text-blue-400 mb-3" />
-                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">创建系列</h4>
-                <p className="text-sm text-gray-400">适合多集连续故事</p>
+                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">{t("home.createSeriesCardTitle")}</h4>
+                <p className="text-sm text-gray-400">{t("home.createSeriesCardDesc")}</p>
               </button>
               <button
                 onClick={() => setIsDialogOpen(true)}
                 className="glass-panel p-6 rounded-xl border border-gray-600/30 hover:border-gray-500/60 transition-all group text-left"
               >
                 <FileText size={32} className="text-gray-400 mb-3" />
-                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-primary transition-colors">创建独立项目</h4>
-                <p className="text-sm text-gray-400">适合单个短视频</p>
+                <h4 className="text-lg font-display font-bold text-white mb-1 group-hover:text-primary transition-colors">{t("home.createProjectCardTitle")}</h4>
+                <p className="text-sm text-gray-400">{t("home.createProjectCardDesc")}</p>
               </button>
             </div>
             <button
@@ -537,14 +537,14 @@ export default function Home() {
               className="mt-6 bg-white/10 hover:bg-white/20 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50 text-sm"
             >
               <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-              从后端同步
+              {t("home.syncFromBackend")}
             </button>
           </motion.div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-display font-bold text-white">
-                我的工作区 ({totalCount})
+                {t("home.workspaceTitle", { count: totalCount })}
               </h2>
               <div className="flex gap-3">
                 <button
@@ -553,14 +553,14 @@ export default function Home() {
                   className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm disabled:opacity-50"
                 >
                   <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-                  同步
+                  {t("home.sync")}
                 </button>
                 <button
                   onClick={() => setIsImportDialogOpen(true)}
                   className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
                 >
                   <FileUp size={16} />
-                  导入文件
+                  {t("home.importFile")}
                 </button>
                 {/* Unified create dropdown */}
                 <div className="relative">
@@ -569,7 +569,7 @@ export default function Home() {
                     className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm"
                   >
                     <Plus size={16} />
-                    新建
+                    {t("home.createNew")}
                     <ChevronDown size={14} />
                   </button>
                   {showCreateDropdown && (
@@ -583,14 +583,14 @@ export default function Home() {
                         className="w-full px-4 py-2.5 text-sm text-left text-white hover:bg-white/10 transition-colors flex items-center gap-2"
                       >
                         <Library size={16} className="text-blue-400" />
-                        新建系列
+                        {t("home.createSeriesMenu")}
                       </button>
                       <button
                         onClick={() => { setIsDialogOpen(true); setShowCreateDropdown(false); }}
                         className="w-full px-4 py-2.5 text-sm text-left text-white hover:bg-white/10 transition-colors flex items-center gap-2"
                       >
                         <FileText size={16} className="text-gray-400" />
-                        新建独立项目
+                        {t("home.createProjectMenu")}
                       </button>
                     </motion.div>
                   )}

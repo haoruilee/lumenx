@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Volume2, Music, Mic, Video, Sliders } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { getAssetUrl } from "@/lib/utils";
-import { bi } from "@/lib/bilingual";
+import { useI18n } from "@/i18n/provider";
 
 const FRAME_FALLBACK_DURATION = 5;
 
 export default function FinalMixStudio() {
+    const { t } = useI18n();
     const currentProject = useProjectStore((state) => state.currentProject);
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -154,13 +155,13 @@ export default function FinalMixStudio() {
                                 <Video size={48} className="opacity-20" />
                                 <div className="font-mono text-xl text-white/50">{formatTime(currentTime)}</div>
                                 <p className="text-sm text-gray-400 max-w-md">
-                                    {bi("Final Mix 会在这里预览真实成片。先完成一次 `Merge & Proceed`，再回来播放最终视频。", "Final Mix previews the real rendered video here. Complete `Merge & Proceed` first, then come back to review the final output.")}
+                                    {t("finalMix.previewHint")}
                                 </p>
                             </div>
                         )}
 
                         <div className="absolute bottom-4 left-4 bg-black/50 px-3 py-1 rounded text-xs backdrop-blur-sm">
-                            {bi("镜头", "Frame")} {Math.min(currentFrameIndex + 1, Math.max(frames.length, 1))}
+                            {t("finalMix.frame")} {Math.min(currentFrameIndex + 1, Math.max(frames.length, 1))}
                         </div>
                     </div>
                 </div>
@@ -168,16 +169,16 @@ export default function FinalMixStudio() {
                 <div className="w-80 bg-black/20 border-l border-white/10 flex flex-col">
                     <div className="p-4 border-b border-white/10">
                         <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                            <Sliders size={16} className="text-primary" /> {bi("音频混合", "Audio Mixer")}
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium ml-2">{bi("预览", "Preview")}</span>
+                            <Sliders size={16} className="text-primary" /> {t("finalMix.audioMixer")}
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium ml-2">{t("finalMix.preview")}</span>
                         </h3>
                     </div>
                     <div className="p-6 space-y-8">
                         {[
-                            { id: "video", label: bi("总混成片", "Final Mix"), icon: <Video size={16} /> },
-                            { id: "voice", label: bi("对白", "Dialogue"), icon: <Mic size={16} /> },
+                            { id: "video", label: t("finalMix.trackFinalMix"), icon: <Video size={16} /> },
+                            { id: "voice", label: t("finalMix.trackDialogue"), icon: <Mic size={16} /> },
                             { id: "sfx", label: "SFX", icon: <Volume2 size={16} /> },
-                            { id: "bgm", label: bi("音乐", "Music"), icon: <Music size={16} /> },
+                            { id: "bgm", label: t("finalMix.trackMusic"), icon: <Music size={16} /> },
                         ].map((track) => (
                             <div key={track.id} className="space-y-2">
                                 <div className="flex justify-between text-xs text-gray-400">
@@ -199,7 +200,7 @@ export default function FinalMixStudio() {
 
                     <div className="mt-auto p-4 border-t border-white/10">
                         <p className="text-[11px] text-gray-500 text-center leading-relaxed">
-                            {bi("当前只有 `Final Mix` 滑杆会控制预览音量，其余轨道是时间线参考，不会单独回写后端。", "Only the `Final Mix` slider controls preview volume right now. The other tracks are timeline references and do not save back to the backend yet.")}
+                            {t("finalMix.volumeHint")}
                         </p>
                     </div>
                 </div>
@@ -246,7 +247,7 @@ export default function FinalMixStudio() {
                     <div className="min-w-full h-full flex flex-col" style={{ width: `${100 * zoom}%` }}>
                         <div className="h-16 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2 group">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                {bi("视频", "Video")}
+                                {t("finalMix.video")}
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-12">
                                 {frames.map((frame: any, i) => (
@@ -254,7 +255,7 @@ export default function FinalMixStudio() {
                                         {(frame.rendered_image_url || frame.image_url) && (
                                             <img src={getAssetUrl(frame.rendered_image_url || frame.image_url)} className="w-full h-full object-cover opacity-60" />
                                         )}
-                                        <div className="absolute bottom-1 left-1 text-[10px] text-blue-200">{bi("镜头", "Shot")} {i + 1}</div>
+                                        <div className="absolute bottom-1 left-1 text-[10px] text-blue-200">{t("finalMix.shot")} {i + 1}</div>
                                     </div>
                                 ))}
                             </div>
@@ -262,7 +263,7 @@ export default function FinalMixStudio() {
 
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                {bi("对白", "Dialogue")}
+                                {t("finalMix.dialogue")}
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-8">
                                 {frames.map((frame: any) => (
@@ -306,7 +307,7 @@ export default function FinalMixStudio() {
                                 {frames.some((frame: any) => frame.bgm_url) && (
                                     <div className="absolute left-0 right-0 top-1 bottom-1 bg-purple-900/40 border border-purple-500/40 rounded mx-1 flex items-center px-4">
                                         <Music size={12} className="text-purple-400 mr-2" />
-                                        <span className="text-[10px] text-purple-300">{bi("背景音乐", "Background Music")}</span>
+                                        <span className="text-[10px] text-purple-300">{t("finalMix.backgroundMusic")}</span>
                                     </div>
                                 )}
                             </div>

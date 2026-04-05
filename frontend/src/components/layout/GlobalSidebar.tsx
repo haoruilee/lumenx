@@ -3,7 +3,7 @@
 import { FolderOpen, Library, Settings } from "lucide-react";
 import clsx from "clsx";
 import LumenXBranding from "./LumenXBranding";
-import { bi } from "@/lib/bilingual";
+import { useI18n } from "@/i18n/provider";
 
 export type GlobalTab = "workspace" | "library" | "settings";
 
@@ -12,14 +12,15 @@ interface GlobalSidebarProps {
   onTabChange: (tab: GlobalTab) => void;
 }
 
-const NAV_ITEMS: { id: GlobalTab; label: string; icon: typeof FolderOpen; hash: string }[] = [
-  { id: "workspace", label: bi("工作区", "Workspace"), icon: FolderOpen, hash: "#/" },
-  { id: "library", label: bi("主体库", "Library"), icon: Library, hash: "#/library" },
-  { id: "settings", label: bi("设置", "Settings"), icon: Settings, hash: "#/settings" },
-];
-
 export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarProps) {
-  const handleNav = (item: (typeof NAV_ITEMS)[number]) => {
+  const { t } = useI18n();
+  const navItems: { id: GlobalTab; label: string; icon: typeof FolderOpen; hash: string }[] = [
+    { id: "workspace", label: t("nav.workspace"), icon: FolderOpen, hash: "#/" },
+    { id: "library", label: t("nav.library"), icon: Library, hash: "#/library" },
+    { id: "settings", label: t("nav.settings"), icon: Settings, hash: "#/settings" },
+  ];
+
+  const handleNav = (item: (typeof navItems)[number]) => {
     onTabChange(item.id);
     window.location.hash = item.hash;
   };
@@ -33,7 +34,7 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = activeTab === item.id;
           const Icon = item.icon;
           return (

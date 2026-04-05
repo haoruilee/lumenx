@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import type { Series, Character, Scene, Prop, Project } from "@/store/projectStore";
 import AssetCard from "@/components/common/AssetCard";
 import SeriesSidebar, { type SidebarItem } from "./SeriesSidebar";
-import { bi } from "@/lib/bilingual";
+import { useI18n } from "@/i18n/provider";
 
 const SeriesModelSettingsModal = dynamic(() => import("./SeriesModelSettingsModal"), { ssr: false });
 const SeriesPromptConfigModal = dynamic(() => import("./SeriesPromptConfigModal"), { ssr: false });
@@ -20,19 +20,8 @@ interface SeriesDetailPageProps {
 
 type AssetTab = "characters" | "scenes" | "props";
 
-const ASSET_LABELS: Record<AssetTab, string> = {
-  characters: bi("角色", "Characters"),
-  scenes: bi("场景", "Scenes"),
-  props: bi("道具", "Props"),
-};
-
-const EMPTY_ASSET_LABELS: Record<AssetTab, string> = {
-  characters: bi("暂无角色资产", "No character assets yet"),
-  scenes: bi("暂无场景资产", "No scene assets yet"),
-  props: bi("暂无道具资产", "No prop assets yet"),
-};
-
 export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
+  const { t } = useI18n();
   const [series, setSeries] = useState<Series | null>(null);
   const [episodes, setEpisodes] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,8 +122,7 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
-        <div className="text-gray-400">加载中...</div>
-        <div className="text-xs text-gray-600 mt-2">Loading...</div>
+        <div className="text-gray-400">{t("series.loading")}</div>
       </div>
     );
   }
@@ -144,8 +132,8 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <p className="text-gray-400 mb-4">{bi("系列未找到", "Series not found")}</p>
-          <a href="#/" className="text-primary hover:underline">{bi("返回首页", "Back to Home")}</a>
+          <p className="text-gray-400 mb-4">{t("series.notFound")}</p>
+          <a href="#/" className="text-primary hover:underline">{t("series.backToHome")}</a>
         </div>
       </div>
     );
@@ -198,7 +186,13 @@ export default function SeriesDetailPage({ seriesId }: SeriesDetailPageProps) {
               key={`asset-${activeItem.tab}`}
               tab={activeItem.tab}
               assets={getAssets(activeItem.tab)}
-              label={ASSET_LABELS[activeItem.tab]}
+              label={
+                activeItem.tab === "characters"
+                  ? t("home.characters")
+                  : activeItem.tab === "scenes"
+                    ? t("home.scenes")
+                    : t("home.props")
+              }
             />
           ) : selectedEpisode ? (
             <EpisodeContentPanel
@@ -252,6 +246,14 @@ function AssetContentPanel({
   assets: (Character | Scene | Prop)[];
   label: string;
 }) {
+  const { t } = useI18n();
+  const emptyLabel =
+    tab === "characters"
+      ? t("series.noCharacterAssets")
+      : tab === "scenes"
+        ? t("series.noSceneAssets")
+        : t("series.noPropAssets");
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 24 }}
@@ -265,11 +267,11 @@ function AssetContentPanel({
         <h2 className="text-xl font-display font-bold text-white">
           {label}
           <span className="text-sm font-normal text-gray-500 ml-2">
-            {assets.length} 项
+            {t("series.assetsCount", { count: assets.length })}
           </span>
         </h2>
         <p className="text-xs text-gray-600 mt-1">
-          {bi("在集数编辑器中生成的资产将自动共享到这里", "Assets created inside episode editor will be shared here automatically")}
+          {t("series.assetsSharedHint")}
         </p>
       </div>
 
@@ -284,8 +286,8 @@ function AssetContentPanel({
             >
               <ImageIcon size={28} className="text-gray-600" />
             </motion.div>
-            <p className="text-sm font-medium">{EMPTY_ASSET_LABELS[tab]}</p>
-            <p className="text-xs text-gray-600 mt-1">{bi("资产将在集数中生成后共享到这里", "Assets generated in episodes will appear here")}</p>
+            <p className="text-sm font-medium">{emptyLabel}</p>
+            <p className="text-xs text-gray-600 mt-1">{t("series.assetsGeneratedHint")}</p>
           </div>
         ) : (
           <motion.div
@@ -330,6 +332,7 @@ function EpisodeContentPanel({
   seriesId: string;
   onOpenEditor: () => void;
 }) {
+  const { t } = useI18n();
   const frames = episode.frames || [];
 
   return (
@@ -352,7 +355,7 @@ function EpisodeContentPanel({
             </h2>
           </div>
           <p className="text-xs text-gray-500">
-            {bi(`${frames.length} 分镜`, `${frames.length} storyboard frames`)}
+            {t("series.storyboardFramesCount", { count: frames.length })}
           </p>
         </div>
         <motion.button
@@ -362,7 +365,7 @@ function EpisodeContentPanel({
           className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-primary/20 hover:shadow-primary/30"
         >
           <Play size={14} />
-          {bi("进入编辑器", "Open Editor")}
+          {t("series.openEditor")}
           <ChevronRight size={14} />
         </motion.button>
       </div>
@@ -378,8 +381,8 @@ function EpisodeContentPanel({
             >
               <Play size={28} className="text-gray-600" />
             </motion.div>
-            <p className="text-sm font-medium">{bi("暂无分镜", "No storyboard yet")}</p>
-            <p className="text-xs text-gray-600 mt-1">{bi("进入编辑器开始创作", "Open the editor to start creating")}</p>
+            <p className="text-sm font-medium">{t("series.noStoryboard")}</p>
+            <p className="text-xs text-gray-600 mt-1">{t("series.startCreatingHint")}</p>
           </div>
         ) : (
           <motion.div
@@ -410,7 +413,7 @@ function EpisodeContentPanel({
                   {frame.rendered_image_url ? (
                     <img
                       src={frame.rendered_image_url}
-                      alt={`分镜 ${i + 1}`}
+                      alt={t("series.shotAlt", { index: i + 1 })}
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
@@ -427,7 +430,7 @@ function EpisodeContentPanel({
                 </div>
                 <div className="p-2.5">
                   <p className="text-xs text-gray-400 truncate">
-                    {frame.scene_description || `分镜 ${i + 1}`}
+                    {frame.scene_description || t("series.shotAlt", { index: i + 1 })}
                   </p>
                 </div>
               </motion.div>
