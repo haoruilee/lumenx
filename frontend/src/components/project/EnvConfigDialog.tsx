@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, ChevronDown, ChevronRight, Loader2, Key } from "lucide-react";
 import { api, type EnvConfigPayload, type ProviderMode } from "@/lib/api";
 import { extractErrorDetail } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 interface EnvConfigDialogProps {
   isOpen: boolean;
@@ -99,6 +100,7 @@ const getValidationErrors = (env: EnvConfig): string[] => {
 };
 
 export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }: EnvConfigDialogProps) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<EnvConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,9 +123,9 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
       console.error("Failed to load env config:", error);
       const status = (error as any)?.response?.status;
       if (status === 401) {
-        setLoadError("需要先完成入口密码登录，才能查看环境配置。");
+        setLoadError(t("envDialog.authRequired"));
       } else {
-        setLoadError(extractErrorDetail(error, "Failed to load configuration. Is the backend running?"));
+        setLoadError(extractErrorDetail(error, t("envDialog.loadConfigFailed")));
       }
     } finally {
       setLoading(false);
@@ -136,7 +138,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
   const handleSave = async () => {
     const errors = getValidationErrors(config);
     if (errors.length > 0) {
-      alert(`Please fill in required fields:\n- ${errors.join("\n- ")}`);
+      alert(`${t("envDialog.fillRequired")}\n- ${errors.join("\n- ")}`);
       return;
     }
 
@@ -153,11 +155,11 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
         LUMENX_ENTRY_PASSWORD: "",
         LUMENX_ENTRY_PASSWORD_CONFIGURED: prev.LUMENX_ENTRY_PASSWORD_CONFIGURED || Boolean(config.LUMENX_ENTRY_PASSWORD.trim()),
       }));
-      alert("Configuration saved successfully!");
+      alert(t("envDialog.saveConfigSuccess"));
       onClose();
     } catch (error) {
       console.error("Failed to save env config:", error);
-      alert(extractErrorDetail(error, "Failed to save configuration. Please try again."));
+      alert(extractErrorDetail(error, t("envDialog.saveConfigFailed")));
     } finally {
       setSaving(false);
     }
@@ -208,8 +210,8 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                 <Key size={20} className="text-amber-400" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">Environment Configuration</h2>
-                <p className="text-xs text-gray-500">DashScope-first setup, with optional OSS mirror and vendor-direct routing</p>
+                <h2 className="text-lg font-bold text-white">{t("envDialog.title")}</h2>
+                <p className="text-xs text-gray-500">{t("envDialog.desc")}</p>
               </div>
             </div>
             <button
@@ -224,19 +226,19 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {isRequired && (
               <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-300">
-                DashScope API Key is required before using the app. OSS and vendor keys are optional unless you select vendor-direct mode.
+                {t("envDialog.requiredHint")}
               </div>
             )}
             {isRequired && !canClose && (
               <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-400">
-                This dialog cannot be closed until required fields are valid.
+                {t("envDialog.requiredLockHint")}
               </div>
             )}
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 size={24} className="animate-spin text-amber-400" />
-                <span className="ml-2 text-gray-400">Loading configuration...</span>
+                <span className="ml-2 text-gray-400">{t("envDialog.loadingConfig")}</span>
               </div>
             ) : loadError ? (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
@@ -259,31 +261,31 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                 </div>
 
                 <div className="pt-4 border-t border-white/10">
-                  <h3 className="text-sm font-bold text-white mb-4">访问鉴权</h3>
+                  <h3 className="text-sm font-bold text-white mb-4">{t("envDialog.accessAuth")}</h3>
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-3">
                     <div>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>入口密码</span>
+                        <span>{t("envDialog.entryPassword")}</span>
                         <span className="text-gray-600 font-normal text-xs">
-                          {config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? "已配置，留空表示保持不变" : "留空表示关闭"}
+                          {config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? t("envDialog.passwordConfiguredKeep") : t("envDialog.passwordEmptyDisable")}
                         </span>
                       </label>
                       <input
                         type="password"
                         value={config.LUMENX_ENTRY_PASSWORD}
                         onChange={(e) => handleChange("LUMENX_ENTRY_PASSWORD", e.target.value)}
-                        placeholder={config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? "输入新密码以覆盖当前配置" : "为站点设置访问密码"}
+                        placeholder={config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? t("envDialog.passwordOverride") : t("envDialog.passwordSetPlaceholder")}
                         className={inputClass}
                       />
                     </div>
                     <p className="text-xs text-gray-500">
-                      入口鉴权由后端中间件强制执行。密码只从环境配置读取，不会以明文回显到前端。
+                      {t("envDialog.passwordHint")}
                     </p>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t border-white/10">
-                  <h3 className="text-sm font-bold text-white mb-4">LLM 配置</h3>
+                  <h3 className="text-sm font-bold text-white mb-4">{t("settingsPage.llmConfig")}</h3>
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => handleChange("LLM_PROVIDER", "dashscope")} className={modeButtonClass(config.LLM_PROVIDER !== "openai")}>

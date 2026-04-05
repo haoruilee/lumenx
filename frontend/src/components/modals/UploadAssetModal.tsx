@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Upload, Image as ImageIcon, User, Layout, Eye } from "lucide-react";
+import { useI18n } from "@/i18n/provider";
 
 interface UploadAssetModalProps {
     isOpen: boolean;
@@ -15,20 +16,6 @@ interface UploadAssetModalProps {
     onUploadComplete: (updatedScript: any) => void;
 }
 
-const UPLOAD_TYPES = {
-    character: [
-        { id: "full_body", label: "全身图", icon: User, description: "角色全身立绘" },
-        { id: "head_shot", label: "头像特写", icon: Eye, description: "角色头像/面部特写" },
-        { id: "three_views", label: "三视图", icon: Layout, description: "角色正面/侧面/背面" },
-    ],
-    scene: [
-        { id: "image", label: "场景图", icon: ImageIcon, description: "场景参考图" },
-    ],
-    prop: [
-        { id: "image", label: "道具图", icon: ImageIcon, description: "道具参考图" },
-    ],
-};
-
 export default function UploadAssetModal({
     isOpen,
     onClose,
@@ -39,6 +26,7 @@ export default function UploadAssetModal({
     scriptId,
     onUploadComplete,
 }: UploadAssetModalProps) {
+    const { t } = useI18n();
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [uploadType, setUploadType] = useState<string>(
@@ -54,12 +42,12 @@ export default function UploadAssetModal({
         if (file) {
             // Validate file type
             if (!file.type.startsWith("image/")) {
-                setError("请选择图片文件");
+                setError(t("uploadAsset.imageOnly"));
                 return;
             }
             // Validate file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
-                setError("文件大小不能超过 10MB");
+                setError(t("uploadAsset.imageTooLarge"));
                 return;
             }
             setSelectedFile(file);
@@ -80,7 +68,7 @@ export default function UploadAssetModal({
 
     const handleUpload = async () => {
         if (!selectedFile) {
-            setError("请先选择图片");
+            setError(t("uploadAsset.selectImageFirst"));
             return;
         }
 
@@ -101,7 +89,7 @@ export default function UploadAssetModal({
             onUploadComplete(updatedScript);
             handleClose();
         } catch (err: any) {
-            setError(err.message || "上传失败，请重试");
+            setError(err.message || t("uploadAsset.uploadFailed"));
         } finally {
             setIsUploading(false);
         }
@@ -115,7 +103,19 @@ export default function UploadAssetModal({
         onClose();
     };
 
-    const uploadTypes = UPLOAD_TYPES[assetType] || [];
+    const uploadTypes = {
+        character: [
+            { id: "full_body", label: t("uploadAsset.typeFullBody"), icon: User, description: t("uploadAsset.typeFullBodyDesc") },
+            { id: "head_shot", label: t("uploadAsset.typeHeadShot"), icon: Eye, description: t("uploadAsset.typeHeadShotDesc") },
+            { id: "three_views", label: t("uploadAsset.typeThreeViews"), icon: Layout, description: t("uploadAsset.typeThreeViewsDesc") },
+        ],
+        scene: [
+            { id: "image", label: t("uploadAsset.typeScene"), icon: ImageIcon, description: t("uploadAsset.typeSceneDesc") },
+        ],
+        prop: [
+            { id: "image", label: t("uploadAsset.typeProp"), icon: ImageIcon, description: t("uploadAsset.typePropDesc") },
+        ],
+    }[assetType] || [];
 
     if (!isOpen) return null;
 
@@ -138,7 +138,7 @@ export default function UploadAssetModal({
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                         <h2 className="text-xl font-bold text-white">
-                            上传资产 - {assetName}
+                            {t("uploadAsset.title", { name: assetName })}
                         </h2>
                         <button
                             onClick={handleClose}
@@ -152,7 +152,7 @@ export default function UploadAssetModal({
                     {assetType === "character" && (
                         <div className="mb-6">
                             <label className="block text-sm font-medium text-gray-400 mb-3">
-                                选择资产类型
+                                {t("uploadAsset.chooseType")}
                             </label>
                             <div className="grid grid-cols-3 gap-3">
                                 {uploadTypes.map((type) => {
@@ -183,7 +183,7 @@ export default function UploadAssetModal({
                     {/* File Upload Area */}
                     <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-400 mb-3">
-                            选择图片
+                            {t("uploadAsset.chooseImage")}
                         </label>
                         <div
                             onDrop={handleDrop}
@@ -209,15 +209,15 @@ export default function UploadAssetModal({
                                         className="max-h-48 mx-auto rounded-lg object-contain"
                                     />
                                     <div className="mt-3 text-sm text-gray-400">
-                                        点击更换图片
+                                        {t("uploadAsset.replaceImage")}
                                     </div>
                                 </div>
                             ) : (
                                 <>
                                     <Upload size={32} className="mx-auto text-gray-500 mb-3" />
-                                    <div className="text-gray-400">拖拽图片到此处或点击选择</div>
+                                    <div className="text-gray-400">{t("uploadAsset.dropImageHint")}</div>
                                     <div className="text-xs text-gray-500 mt-2">
-                                        支持 JPG、PNG、WebP，最大 10MB
+                                        {t("uploadAsset.supportImageHint")}
                                     </div>
                                 </>
                             )}
@@ -227,17 +227,17 @@ export default function UploadAssetModal({
                     {/* Description Editor */}
                     <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-400 mb-2">
-                            角色描述 <span className="text-xs text-gray-500">(用于后续生成)</span>
+                            {t("uploadAsset.description")} <span className="text-xs text-gray-500">({t("uploadAsset.descriptionUsage")})</span>
                         </label>
                         <textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             rows={3}
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm resize-none focus:outline-none focus:border-primary/50"
-                            placeholder="描述角色的外观特征..."
+                            placeholder={t("uploadAsset.descriptionPlaceholder")}
                         />
                         <div className="text-xs text-gray-500 mt-1">
-                            💡 请确保描述与上传图片一致，这将用于生成其他类型的资产
+                            {t("uploadAsset.descriptionHint")}
                         </div>
                     </div>
 
@@ -254,7 +254,7 @@ export default function UploadAssetModal({
                             onClick={handleClose}
                             className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
                         >
-                            取消
+                            {t("common.cancel")}
                         </button>
                         <button
                             onClick={handleUpload}
@@ -264,12 +264,12 @@ export default function UploadAssetModal({
                             {isUploading ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    上传中...
+                                    {t("uploadAsset.uploading")}
                                 </>
                             ) : (
                                 <>
                                     <Upload size={16} />
-                                    确认上传
+                                    {t("uploadAsset.confirmUpload")}
                                 </>
                             )}
                         </button>

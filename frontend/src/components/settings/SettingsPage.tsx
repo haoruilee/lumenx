@@ -6,6 +6,7 @@ import { api, type EnvConfigPayload, type ProviderMode } from "@/lib/api";
 import { T2I_MODELS, I2I_MODELS, ASPECT_RATIOS, getVideoModelsForMode } from "@/store/projectStore";
 import { Image, Video, Layout, Check, User, Building, Box } from "lucide-react";
 import { extractErrorDetail } from "@/lib/utils";
+import { useI18n } from "@/i18n/provider";
 
 type EnvConfig = EnvConfigPayload & {
   DASHSCOPE_API_KEY: string;
@@ -139,6 +140,7 @@ function loadFromLS<T>(key: string, fallback: T): T {
 }
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   // ── API Config ──
   const [config, setConfig] = useState<EnvConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
@@ -169,9 +171,9 @@ export default function SettingsPage() {
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status === 401) {
-        setLoadError("需要先完成入口密码登录，才能查看环境配置。");
+        setLoadError(t("settingsPage.authRequired"));
       } else {
-        setLoadError(extractErrorDetail(error, "Failed to load configuration. Is the backend running?"));
+        setLoadError(extractErrorDetail(error, t("settingsPage.loadConfigFailed")));
       }
     } finally {
       setLoading(false);
@@ -181,7 +183,7 @@ export default function SettingsPage() {
   const handleSaveApiConfig = async () => {
     const errors = getValidationErrors(config);
     if (errors.length > 0) {
-      alert(`Please fill in required fields:\n- ${errors.join("\n- ")}`);
+      alert(`${t("settingsPage.fillRequired")}\n- ${errors.join("\n- ")}`);
       return;
     }
 
@@ -193,9 +195,9 @@ export default function SettingsPage() {
       }
       delete payload.LUMENX_ENTRY_PASSWORD_CONFIGURED;
       await api.saveEnvConfig(payload);
-      alert("Configuration saved successfully!");
+      alert(t("settingsPage.saveConfigSuccess"));
     } catch (error) {
-      alert(extractErrorDetail(error, "Failed to save configuration."));
+      alert(extractErrorDetail(error, t("settingsPage.saveConfigFailed")));
     } finally {
       setSaving(false);
     }
@@ -214,12 +216,12 @@ export default function SettingsPage() {
 
   const handleSaveModelDefaults = () => {
     localStorage.setItem(LS_KEY_MODEL, JSON.stringify(modelSettings));
-    alert("Default model settings saved!");
+    alert(t("settingsPage.modelDefaultsSaved"));
   };
 
   const handleSavePromptDefaults = () => {
     localStorage.setItem(LS_KEY_PROMPT, JSON.stringify(promptConfig));
-    alert("Default prompt configuration saved!");
+    alert(t("settingsPage.promptDefaultsSaved"));
   };
 
   const inputClass =
@@ -229,7 +231,7 @@ export default function SettingsPage() {
 
   return (
     <div className="container mx-auto px-6 py-8 max-w-4xl space-y-8">
-      <h1 className="text-2xl font-display font-bold text-white">设置</h1>
+      <h1 className="text-2xl font-display font-bold text-white">{t("settingsPage.title")}</h1>
 
       {/* ── Section 1: API Configuration ── */}
       <section className="glass-panel rounded-xl p-6 space-y-6">
@@ -238,15 +240,15 @@ export default function SettingsPage() {
             <Key size={20} className="text-amber-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">API 配置</h2>
-            <p className="text-xs text-gray-500">DashScope-first setup with optional OSS mirror and provider-direct routing</p>
+            <h2 className="text-lg font-bold text-white">{t("settingsPage.apiConfig")}</h2>
+            <p className="text-xs text-gray-500">{t("settingsPage.apiConfigDesc")}</p>
           </div>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 size={24} className="animate-spin text-amber-400" />
-            <span className="ml-2 text-gray-400">Loading configuration...</span>
+            <span className="ml-2 text-gray-400">{t("settingsPage.loadingConfig")}</span>
           </div>
         ) : loadError ? (
           <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
@@ -256,38 +258,38 @@ export default function SettingsPage() {
           <>
             <div>
               <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                <span>DashScope API Key <span className="text-red-500">*</span></span>
+                <span>{t("settingsPage.dashscopeRequired")} <span className="text-red-500">*</span></span>
                 <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
               </label>
-              <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="Required for DashScope-first model routing" className={inputClass} />
+              <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder={t("settingsPage.dashscopePlaceholder")} className={inputClass} />
             </div>
 
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">访问鉴权</h3>
+              <h3 className="text-sm font-bold text-white mb-4">{t("settingsPage.accessAuth")}</h3>
               <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-3">
                 <div>
                   <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>入口密码</span>
+                    <span>{t("settingsPage.entryPassword")}</span>
                     <span className="text-gray-600 font-normal text-xs">
-                      {config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? "已配置，留空表示保持不变" : "留空表示关闭"}
+                      {config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? t("settingsPage.passwordConfiguredKeep") : t("settingsPage.passwordEmptyDisable")}
                     </span>
                   </label>
                   <input
                     type="password"
                     value={config.LUMENX_ENTRY_PASSWORD}
                     onChange={(e) => handleChange("LUMENX_ENTRY_PASSWORD", e.target.value)}
-                    placeholder={config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? "输入新密码以覆盖当前配置" : "为站点设置访问密码"}
+                    placeholder={config.LUMENX_ENTRY_PASSWORD_CONFIGURED ? t("settingsPage.passwordOverride") : t("settingsPage.passwordSetPlaceholder")}
                     className={inputClass}
                   />
                 </div>
                 <p className="text-xs text-gray-500">
-                  这层密码由后端中间件强制执行，前端仅负责登录交互；未输入新值时不会回传或覆盖已有密码。
+                  {t("settingsPage.passwordHint")}
                 </p>
               </div>
             </div>
 
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">LLM 配置</h3>
+              <h3 className="text-sm font-bold text-white mb-4">{t("settingsPage.llmConfig")}</h3>
               <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => handleChange("LLM_PROVIDER", "dashscope")} className={modeButtonClass(config.LLM_PROVIDER !== "openai")}>
@@ -298,26 +300,26 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  DashScope mode uses your DashScope API key for LLM calls. OpenAI-compatible mode supports OpenAI, DeepSeek, Ollama, etc.
+                  {t("settingsPage.llmConfigHint")}
                 </p>
                 {config.LLM_PROVIDER !== "openai" ? (
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">LLM Model</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.llmModel")}</label>
                     <input type="text" value={config.LLM_MODEL} onChange={(e) => handleChange("LLM_MODEL", e.target.value)} placeholder="qwen3.5-plus" className={inputClass} />
-                    <p className="text-[10px] text-gray-500 mt-1">Leave empty to use the default (qwen3.5-plus)</p>
+                    <p className="text-[10px] text-gray-500 mt-1">{t("settingsPage.llmModelHint")}</p>
                   </div>
                 ) : (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.openaiApiKey")} <span className="text-red-500">*</span></label>
                       <input type="password" value={config.OPENAI_API_KEY} onChange={(e) => handleChange("OPENAI_API_KEY", e.target.value)} placeholder="sk-..." className={inputClass} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Base URL</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.baseUrl")}</label>
                       <input type="text" value={config.OPENAI_BASE_URL} onChange={(e) => handleChange("OPENAI_BASE_URL", e.target.value)} placeholder="https://api.openai.com/v1" className={inputClass} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Model</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.model")}</label>
                       <input type="text" value={config.LLM_MODEL} onChange={(e) => handleChange("LLM_MODEL", e.target.value)} placeholder="gpt-4o" className={inputClass} />
                     </div>
                   </>
@@ -326,42 +328,42 @@ export default function SettingsPage() {
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-              <p className="text-xs text-gray-400">Storage is local-first by default. These credentials are only needed when enabling OSS mirror.</p>
+              <p className="text-xs text-gray-400">{t("settingsPage.storageHint")}</p>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key ID</label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_ID} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)} placeholder="Optional, for OSS mirror" className={inputClass} />
+                <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.ossAccessKeyId")}</label>
+                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_ID} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)} placeholder={t("settingsPage.ossOptionalPlaceholder")} className={inputClass} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key Secret</label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)} placeholder="Optional, for OSS mirror" className={inputClass} />
+                <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.ossAccessKeySecret")}</label>
+                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)} placeholder={t("settingsPage.ossOptionalPlaceholder")} className={inputClass} />
               </div>
             </div>
 
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-2">OSS Mirror (Optional)</h3>
-              <p className="text-[10px] text-gray-500 mb-4">Generated assets always save locally first. Configure OSS to keep an optional cloud mirror.</p>
+              <h3 className="text-sm font-bold text-white mb-2">{t("settingsPage.ossMirror")}</h3>
+              <p className="text-[10px] text-gray-500 mb-4">{t("settingsPage.ossMirrorHint")}</p>
               <div className="space-y-4">
                 <div>
                   <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Bucket Name</span>
+                    <span>{t("settingsPage.ossBucketName")}</span>
                   </label>
-                  <input type="text" value={config.OSS_BUCKET_NAME} onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)} placeholder="your_bucket_name (optional)" className={inputClass} />
+                  <input type="text" value={config.OSS_BUCKET_NAME} onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)} placeholder={t("settingsPage.ossBucketPlaceholder")} className={inputClass} />
                 </div>
                 <div>
                   <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Endpoint</span>
+                    <span>{t("settingsPage.ossEndpoint")}</span>
                   </label>
-                  <input type="text" value={config.OSS_ENDPOINT} onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)} placeholder="oss-cn-beijing.aliyuncs.com (optional)" className={inputClass} />
+                  <input type="text" value={config.OSS_ENDPOINT} onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)} placeholder={t("settingsPage.ossEndpointPlaceholder")} className={inputClass} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">OSS Base Path</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.ossBasePath")}</label>
                   <input type="text" value={config.OSS_BASE_PATH} onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)} placeholder="lumenx" className={inputClass} />
                 </div>
               </div>
             </div>
 
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Kling Provider</h3>
+              <h3 className="text-sm font-bold text-white mb-4">{t("settingsPage.klingProvider")}</h3>
               <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => handleChange("KLING_PROVIDER_MODE", "dashscope")} className={modeButtonClass(config.KLING_PROVIDER_MODE === "dashscope")}>
@@ -372,17 +374,17 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  DashScope mode uses your DashScope API key. Vendor-direct mode requires Kling Access Key and Secret Key.
+                  {t("settingsPage.klingHint")}
                 </p>
                 {config.KLING_PROVIDER_MODE === "vendor" && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Kling Access Key <span className="text-red-500">*</span></label>
-                      <input type="password" value={config.KLING_ACCESS_KEY} onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)} placeholder="Kling API Access Key" className={inputClass} />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.klingAccessKey")} <span className="text-red-500">*</span></label>
+                      <input type="password" value={config.KLING_ACCESS_KEY} onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)} placeholder={t("settingsPage.klingAccessKey")} className={inputClass} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Kling Secret Key <span className="text-red-500">*</span></label>
-                      <input type="password" value={config.KLING_SECRET_KEY} onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)} placeholder="Kling API Secret Key" className={inputClass} />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.klingSecretKey")} <span className="text-red-500">*</span></label>
+                      <input type="password" value={config.KLING_SECRET_KEY} onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)} placeholder={t("settingsPage.klingSecretKey")} className={inputClass} />
                     </div>
                   </>
                 )}
@@ -390,7 +392,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Vidu Provider</h3>
+              <h3 className="text-sm font-bold text-white mb-4">{t("settingsPage.viduProvider")}</h3>
               <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => handleChange("VIDU_PROVIDER_MODE", "dashscope")} className={modeButtonClass(config.VIDU_PROVIDER_MODE === "dashscope")}>
@@ -401,12 +403,12 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  DashScope mode uses your DashScope API key. Vendor-direct mode requires a Vidu API key.
+                  {t("settingsPage.viduHint")}
                 </p>
                 {config.VIDU_PROVIDER_MODE === "vendor" && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Vidu API Key <span className="text-red-500">*</span></label>
-                    <input type="password" value={config.VIDU_API_KEY} onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)} placeholder="Vidu API Key" className={inputClass} />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">{t("settingsPage.viduApiKey")} <span className="text-red-500">*</span></label>
+                    <input type="password" value={config.VIDU_API_KEY} onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)} placeholder={t("settingsPage.viduApiKey")} className={inputClass} />
                   </div>
                 )}
               </div>
@@ -415,15 +417,15 @@ export default function SettingsPage() {
             <div className="pt-4 border-t border-white/10">
               <button type="button" onClick={() => setEndpointsOpen(!endpointsOpen)} className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors">
                 {endpointsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Advanced: API Endpoints
+                {t("settingsPage.advancedApiEndpoints")}
               </button>
               {endpointsOpen && (
                 <div className="mt-4 space-y-4">
-                  <p className="text-xs text-gray-500">Custom API endpoint URLs. Leave empty to use defaults. Overrides are preserved regardless of provider mode.</p>
+                  <p className="text-xs text-gray-500">{t("settingsPage.endpointHint")}</p>
                   {ENDPOINT_PROVIDERS.map(({ key, label, placeholder }) => (
                     <div key={key}>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>{label} Base URL</span>
+                        <span>{label} {t("settingsPage.baseUrl")}</span>
                         <span className="text-gray-600 font-normal text-xs">{placeholder}</span>
                       </label>
                       <input type="text" value={config.endpoint_overrides[key] || ""} onChange={(e) => handleEndpointChange(key, e.target.value)} placeholder={placeholder} className={inputClass + " text-sm"} />
@@ -440,7 +442,7 @@ export default function SettingsPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {saving ? "Saving..." : "Save Configuration"}
+                {saving ? t("settingsPage.saving") : t("settingsPage.saveConfiguration")}
               </button>
             </div>
           </>
@@ -454,15 +456,15 @@ export default function SettingsPage() {
             <Settings size={20} className="text-blue-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">默认模型设置</h2>
-            <p className="text-xs text-gray-500">Default models and aspect ratios for new projects</p>
+            <h2 className="text-lg font-bold text-white">{t("settingsPage.defaultModelSettings")}</h2>
+            <p className="text-xs text-gray-500">{t("settingsPage.defaultModelSettingsDesc")}</p>
           </div>
         </div>
 
         <div className="space-y-5">
           <div className="flex items-center gap-2 text-sm font-bold text-white">
             <Image size={16} className="text-green-400" />
-            <span>Text-to-Image Model</span>
+            <span>{t("settingsPage.textToImageModel")}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {T2I_MODELS.map((model) => (
@@ -481,9 +483,9 @@ export default function SettingsPage() {
           <div className="grid grid-cols-3 gap-4">
             {(
               [
-                { key: "character_aspect_ratio" as const, label: "Character", icon: User },
-                { key: "scene_aspect_ratio" as const, label: "Scene", icon: Building },
-                { key: "prop_aspect_ratio" as const, label: "Prop", icon: Box },
+                { key: "character_aspect_ratio" as const, label: t("settingsPage.character"), icon: User },
+                { key: "scene_aspect_ratio" as const, label: t("settingsPage.scene"), icon: Building },
+                { key: "prop_aspect_ratio" as const, label: t("settingsPage.prop"), icon: Box },
               ] as const
             ).map(({ key, label, icon: Icon }) => (
               <div key={key} className="space-y-2">
@@ -502,7 +504,7 @@ export default function SettingsPage() {
           <div className="border-t border-white/10 pt-4">
             <div className="flex items-center gap-2 text-sm font-bold text-white">
               <Layout size={16} className="text-blue-400" />
-              <span>Storyboard (Image-to-Image)</span>
+              <span>{t("settingsPage.storyboardI2I")}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {I2I_MODELS.map((model) => (
@@ -514,7 +516,7 @@ export default function SettingsPage() {
               ))}
             </div>
             <div className="mt-3 space-y-2">
-              <label className="text-xs text-gray-400">Storyboard Aspect Ratio</label>
+              <label className="text-xs text-gray-400">{t("settingsPage.storyboardAspectRatio")}</label>
               <div className="grid grid-cols-3 gap-2">
                 {ASPECT_RATIOS.map((ratio) => (
                   <button key={ratio.id} onClick={() => setModelSettings((s) => ({ ...s, storyboard_aspect_ratio: ratio.id }))} className={`flex flex-col items-center p-3 rounded-lg border transition-all ${modelSettings.storyboard_aspect_ratio === ratio.id ? "border-blue-500/50 bg-blue-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
@@ -528,7 +530,7 @@ export default function SettingsPage() {
           <div className="border-t border-white/10 pt-4">
             <div className="flex items-center gap-2 text-sm font-bold text-white">
               <Video size={16} className="text-purple-400" />
-              <span>Motion (Image-to-Video)</span>
+              <span>{t("settingsPage.motionI2V")}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {DEFAULT_I2V_MODELS.map((model) => (
@@ -542,7 +544,7 @@ export default function SettingsPage() {
             <div className="mt-3">
               <div className="flex items-center gap-2 text-sm font-bold text-white">
                 <Video size={16} className="text-fuchsia-400" />
-                <span>Motion (Reference-to-Video)</span>
+                <span>{t("settingsPage.motionR2V")}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {DEFAULT_R2V_MODELS.map((model) => (
@@ -560,7 +562,7 @@ export default function SettingsPage() {
         <div className="flex justify-end">
           <button onClick={handleSaveModelDefaults} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all">
             <Save size={16} />
-            Save Defaults
+            {t("settingsPage.saveDefaults")}
           </button>
         </div>
       </section>
@@ -572,16 +574,16 @@ export default function SettingsPage() {
             <MessageSquareCode size={20} className="text-purple-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">默认提示词配置</h2>
-            <p className="text-xs text-gray-500">Default system prompts for new projects (leave empty for built-in defaults)</p>
+            <h2 className="text-lg font-bold text-white">{t("settingsPage.defaultPromptConfig")}</h2>
+            <p className="text-xs text-gray-500">{t("settingsPage.defaultPromptConfigDesc")}</p>
           </div>
         </div>
 
         {(
           [
-            { key: "storyboard_polish" as const, label: "Storyboard Polish", desc: "System prompt for storyboard/image prompt polishing" },
-            { key: "video_polish" as const, label: "Video I2V Polish", desc: "System prompt for Image-to-Video prompt polishing" },
-            { key: "r2v_polish" as const, label: "Video R2V Polish", desc: "System prompt for Reference-to-Video prompt polishing" },
+            { key: "storyboard_polish" as const, label: t("settingsPage.storyboardPolish"), desc: t("settingsPage.storyboardPolishDesc") },
+            { key: "video_polish" as const, label: t("settingsPage.videoI2VPolish"), desc: t("settingsPage.videoI2VPolishDesc") },
+            { key: "r2v_polish" as const, label: t("settingsPage.videoR2VPolish"), desc: t("settingsPage.videoR2VPolishDesc") },
           ] as const
         ).map((section) => (
           <div key={section.key} className="space-y-2">
@@ -590,7 +592,7 @@ export default function SettingsPage() {
             <textarea
               value={promptConfig[section.key]}
               onChange={(e) => setPromptConfig((prev) => ({ ...prev, [section.key]: e.target.value }))}
-              placeholder="Leave empty to use system default..."
+              placeholder={t("settingsPage.promptPlaceholder")}
               className="w-full h-32 bg-black/30 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-y focus:outline-none focus:border-purple-500/50 font-mono placeholder-gray-600"
             />
           </div>
@@ -599,7 +601,7 @@ export default function SettingsPage() {
         <div className="flex justify-end">
           <button onClick={handleSavePromptDefaults} className="px-6 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center gap-2">
             <Save size={16} />
-            Save Defaults
+            {t("settingsPage.saveDefaults")}
           </button>
         </div>
       </section>
