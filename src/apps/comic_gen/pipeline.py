@@ -16,7 +16,7 @@ from .video import VideoGenerator
 from .audio import AudioGenerator
 from .export import ExportManager
 from ...utils import get_logger, log_exception_with_context
-from ...utils.oss_utils import is_object_key
+from ...utils.oss_utils import is_object_key, normalize_oss_media_ref
 from ...utils.provider_registry import resolve_provider_backend
 from ...utils.system_check import get_ffmpeg_path, get_ffmpeg_install_instructions
 
@@ -76,6 +76,15 @@ class ComicGenPipeline:
         self._seedance_model = None
         self._aiping_video_model = None
 
+    def _normalize_persisted_media_refs(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return normalize_oss_media_ref(value)
+        if isinstance(value, list):
+            return [self._normalize_persisted_media_refs(item) for item in value]
+        if isinstance(value, dict):
+            return {k: self._normalize_persisted_media_refs(v) for k, v in value.items()}
+        return value
+
     def _resolve_video_backend(self, model_name: str) -> str:
         try:
             return resolve_provider_backend(model_name)
@@ -121,7 +130,11 @@ class ComicGenPipeline:
         try:
             with open(self.data_file, 'r') as f:
                 data = json.load(f)
-                return {k: Script(**v) for k, v in data.items()}
+                normalized = self._normalize_persisted_media_refs(data)
+                if normalized != data:
+                    with open(self.data_file, 'w') as wf:
+                        json.dump(normalized, wf, indent=2)
+                return {k: Script(**v) for k, v in normalized.items()}
         except Exception as e:
             logger.error(f"Failed to load data: {e}")
             return {}
@@ -131,8 +144,11 @@ class ComicGenPipeline:
         with self._save_lock:
             try:
                 os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+                payload = self._normalize_persisted_media_refs(
+                    {k: v.dict() for k, v in self.scripts.items()}
+                )
                 with open(self.data_file, 'w') as f:
-                    json.dump({k: v.dict() for k, v in self.scripts.items()}, f, indent=2)
+                    json.dump(payload, f, indent=2)
             except Exception as e:
                 logger.error(f"Failed to save data: {e}")
 
@@ -1168,6 +1184,64 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    def expand_frame_description(self, script_id: str, frame_id: str, instruction: str = "") -> Dict[str, Any]:
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        frame = next((f for f in script.frames if f.id == frame_id), None)
+        if not frame:
+            raise ValueError(f"Frame {frame_id} not found")
+
+        scene = next((s for s in script.scenes if s.id == frame.scene_id), None)
+        characters = [c for c in script.characters if c.id in (frame.character_ids or [])]
+        props = [p for p in script.props if p.id in (frame.prop_ids or [])]
+
+        context_parts = [
+            f"Current Action / Visuals: {frame.action_description or ''}",
+            f"Dialogue: {frame.dialogue or ''}",
+            f"Camera Angle: {frame.camera_angle or ''}",
+            f"Camera Movement: {frame.camera_movement or ''}",
+            f"Composition: {frame.composition or ''}",
+            f"Atmosphere: {frame.visual_atmosphere or frame.atmosphere or ''}",
+        ]
+
+        if scene:
+            context_parts.append(
+                f"Scene: {scene.name}. {scene.description or ''}. "
+                f"Time: {scene.time_of_day or ''}. Lighting: {scene.lighting_mood or ''}"
+            )
+        if characters:
+            context_parts.append(
+                "Characters: " + "; ".join(
+                    f"{c.name}: {c.description or ''}" for c in characters
+                )
+            )
+        if props:
+            context_parts.append(
+                "Props: " + "; ".join(
+                    f"{p.name}: {p.description or ''}" for p in props
+                )
+            )
+
+        result = self.script_processor.expand_frame_description(
+            "\n".join(context_parts),
+            instruction=instruction,
+        )
+        expanded = (result.get("action_description") or "").strip()
+        if not expanded:
+            expanded = frame.action_description or ""
+
+        frame.action_description = expanded
+        frame.updated_at = time.time()
+        self._save_data()
+
+        return {
+            "frame_id": frame.id,
+            "action_description": expanded,
+            "frame_updated": True,
+        }
+
     def delete_frame(self, script_id: str, frame_id: str) -> Script:
         script = self.scripts.get(script_id)
         if not script:
@@ -1688,7 +1762,8 @@ class ComicGenPipeline:
         """Downloads an image to a temporary file."""
         import requests
         import tempfile
-        
+        from ...utils.oss_utils import OSSImageUploader
+
         # If it's a local file path (relative to output)
         if not url.startswith("http"):
             local_path = _safe_resolve_path("output", url)
@@ -1697,7 +1772,15 @@ class ComicGenPipeline:
                 
         # Download from URL
         try:
-            response = requests.get(url, stream=True)
+            normalized_url = url
+            uploader = OSSImageUploader()
+            object_key = normalize_oss_media_ref(url)
+            if uploader.is_configured and is_object_key(object_key):
+                refreshed_url = uploader.sign_url_for_api(object_key)
+                if refreshed_url:
+                    normalized_url = refreshed_url
+
+            response = requests.get(normalized_url, stream=True)
             response.raise_for_status()
             
             # Create temp file
@@ -1894,9 +1977,9 @@ class ComicGenPipeline:
 
             audio_inputs: List[Dict[str, Any]] = []
             for rel_path, label, volume in (
-                (frame.audio_url, "dialogue", 1.0),
-                (frame.sfx_url, "sfx", 0.8),
-                (frame.bgm_url, "bgm", 0.35),
+                (getattr(frame, "audio_url", None), "dialogue", 1.0),
+                (getattr(frame, "sfx_url", None), "sfx", 0.8),
+                (getattr(frame, "bgm_url", None), "bgm", 0.35),
             ):
                 abs_path = self._resolve_local_media_path(rel_path)
                 if abs_path:
@@ -1954,11 +2037,16 @@ class ComicGenPipeline:
             output_path = _safe_resolve_path(output_dir, f"{index:03d}_{segment['frame_id']}.mp4")
             duration = max(int(segment["duration"]), 1)
             cmd = [ffmpeg_path, "-y", "-i", segment["video_path"]]
+            valid_audio_inputs = [
+                audio_input
+                for audio_input in segment["audio_inputs"]
+                if self._is_decodable_media_file(ffmpeg_path, audio_input["path"])
+            ]
 
-            if segment["audio_inputs"]:
+            if valid_audio_inputs:
                 filter_parts: List[str] = []
                 audio_labels: List[str] = []
-                for input_index, audio_input in enumerate(segment["audio_inputs"], start=1):
+                for input_index, audio_input in enumerate(valid_audio_inputs, start=1):
                     cmd.extend(["-i", audio_input["path"]])
                     mixed_label = f"a{input_index}"
                     filter_parts.append(f"[{input_index}:a]volume={audio_input['volume']}[{mixed_label}]")
@@ -2032,6 +2120,27 @@ class ComicGenPipeline:
                 raise RuntimeError(f"Timed out while preparing final mix segment for frame {segment['frame_id']}")
 
         return rendered_paths
+
+    def _is_decodable_media_file(self, ffmpeg_path: str, path: Optional[str]) -> bool:
+        if not path or not os.path.exists(path):
+            return False
+
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, "-v", "error", "-i", path, "-f", "null", "-"],
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception as e:
+            logger.warning("[MERGE] Media validation failed for %s: %s", path, e)
+            return False
+
+        if result.returncode == 0:
+            return True
+
+        stderr_msg = result.stderr.decode(errors="ignore").strip()
+        logger.warning("[MERGE] Skipping invalid media input %s: %s", path, stderr_msg or "decode failed")
+        return False
     
     def _extract_ffmpeg_error_message(self, stderr: str, video_paths: List[str]) -> str:
         """

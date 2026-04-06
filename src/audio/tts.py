@@ -7,9 +7,10 @@ Currently supports:
 """
 import os
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..utils import log_exception_with_context
+from ..utils.api_keys import call_with_api_key_rotation, get_api_keys
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,10 @@ class TTSProcessor:
             voice: Default voice ID (default: longxiaochun_v2)
         """
         self.api_key = api_key or os.getenv('DASHSCOPE_API_KEY')
-        self.aiping_api_key = os.getenv("AIPING_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.aiping_api_keys: List[str] = get_api_keys(
+            "AIPING_API_KEY",
+            fallback_base_names=("OPENAI_API_KEY",),
+        )
         self.aiping_base_url = (os.getenv("AIPING_BASE_URL") or "https://aiping.cn/api/v1").rstrip("/")
         if self.api_key:
             import dashscope
@@ -86,7 +90,7 @@ class TTSProcessor:
             model,
             voice,
             bool(self.api_key),
-            bool(self.aiping_api_key),
+            bool(self.aiping_api_keys),
         )
 
     def synthesize(
@@ -244,47 +248,50 @@ class TTSProcessor:
     ) -> Tuple[object, Optional[str], Optional[float]]:
         import requests
 
-        if not self.aiping_api_key:
+        if not self.aiping_api_keys:
             raise RuntimeError("AIPING_API_KEY is not configured")
 
-        payload = {
-            "model": model,
-            "text": text,
-            "stream": False,
-            "voice_setting": {
-                "voice_id": voice_id,
-                "speed": speech_rate,
-                "vol": max(0, min(10, round(volume / 50, 2))),
-                "pitch": max(-12, min(12, round((pitch_rate - 1.0) * 12, 2))),
-            },
-        }
-        response = requests.post(
-            f"{self.aiping_base_url}/audio/speech",
-            headers={
-                "Authorization": f"Bearer {self.aiping_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=120,
-        )
-        response.raise_for_status()
-        request_id = response.headers.get("x-request-id")
-        content_type = (response.headers.get("content-type") or "").lower()
-        if "application/json" in content_type:
-            data = response.json()
-            audio_payload = data.get("audio")
-            if not isinstance(audio_payload, str):
-                nested = data.get("data")
-                if isinstance(nested, dict):
-                    audio_payload = nested.get("audio")
-            if isinstance(audio_payload, str) and audio_payload:
-                import base64
-                try:
-                    return bytes.fromhex(audio_payload), request_id or data.get("trace_id") or data.get("id"), None
-                except ValueError:
-                    return base64.b64decode(audio_payload), request_id or data.get("trace_id") or data.get("id"), None
-            raise RuntimeError(f"AIPing TTS returned JSON without audio payload: {data}")
-        return response.content, request_id, None
+        def _synthesize(api_key: str) -> Tuple[object, Optional[str], Optional[float]]:
+            payload = {
+                "model": model,
+                "text": text,
+                "stream": False,
+                "voice_setting": {
+                    "voice_id": voice_id,
+                    "speed": speech_rate,
+                    "vol": max(0, min(10, round(volume / 50, 2))),
+                    "pitch": max(-12, min(12, round((pitch_rate - 1.0) * 12, 2))),
+                },
+            }
+            response = requests.post(
+                f"{self.aiping_base_url}/audio/speech",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            request_id = response.headers.get("x-request-id")
+            content_type = (response.headers.get("content-type") or "").lower()
+            if "application/json" in content_type:
+                data = response.json()
+                audio_payload = data.get("audio")
+                if not isinstance(audio_payload, str):
+                    nested = data.get("data")
+                    if isinstance(nested, dict):
+                        audio_payload = nested.get("audio")
+                if isinstance(audio_payload, str) and audio_payload:
+                    import base64
+                    try:
+                        return bytes.fromhex(audio_payload), request_id or data.get("trace_id") or data.get("id"), None
+                    except ValueError:
+                        return base64.b64decode(audio_payload), request_id or data.get("trace_id") or data.get("id"), None
+                raise RuntimeError(f"AIPing TTS returned JSON without audio payload: {data}")
+            return response.content, request_id, None
+
+        return call_with_api_key_rotation(self.aiping_api_keys, _synthesize)
 
     @staticmethod
     def list_voices():

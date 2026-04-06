@@ -71,7 +71,10 @@ def classify_media_ref(
 
     output_root = _output_root(project_root)
     if os.path.isabs(raw):
-        return MEDIA_REF_LOCAL_PATH if _is_under(Path(raw), output_root) else MEDIA_REF_UNKNOWN
+        abs_path = Path(raw)
+        if abs_path.exists():
+            return MEDIA_REF_LOCAL_PATH
+        return MEDIA_REF_LOCAL_PATH if _is_under(abs_path, output_root) else MEDIA_REF_UNKNOWN
 
     relative = raw.lstrip("/")
     if relative.startswith(LOCAL_MEDIA_PREFIXES):
@@ -97,6 +100,8 @@ def resolve_local_media_path(value: str, *, project_root: Optional[str] = None) 
 
     if os.path.isabs(raw):
         abs_path = Path(raw).resolve()
+        if abs_path.exists():
+            return str(abs_path)
         return str(abs_path) if _is_under(abs_path, output_root) else None
 
     relative = raw.lstrip("/")

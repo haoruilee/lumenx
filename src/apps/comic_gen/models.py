@@ -246,6 +246,7 @@ class StoryboardFrame(BaseModel):
     audio_url: Optional[str] = Field(None, description="URL of the generated dialogue audio")
     audio_error: Optional[str] = Field(None, description="Audio generation error message")
     sfx_url: Optional[str] = Field(None, description="URL of the generated sound effect")
+    bgm_url: Optional[str] = Field(None, description="URL of the generated background music")
     
     selected_video_id: Optional[str] = Field(None, description="ID of the selected VideoTask for this frame")
     locked: bool = Field(False, description="Whether this frame is locked from regeneration")

@@ -1,10 +1,15 @@
 import os
-import oss2
 import hashlib
 import time
+from urllib.parse import unquote, urlparse
 from typing import Optional, Tuple
 from . import get_logger
 from .media_refs import classify_media_ref, MEDIA_REF_LOCAL_PATH, MEDIA_REF_OBJECT_KEY
+
+try:
+    import oss2
+except ImportError:  # pragma: no cover - exercised indirectly in tests/sandbox
+    oss2 = None
 
 logger = get_logger(__name__)
 
@@ -47,6 +52,55 @@ def is_local_path(value: str) -> bool:
     )
 
 
+def _normalized_endpoint_host(endpoint: Optional[str]) -> str:
+    raw = (endpoint or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    return (parsed.netloc or parsed.path or "").strip().lower()
+
+
+def extract_object_key_from_oss_url(value: str) -> Optional[str]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    raw = value.strip()
+    if classify_media_ref(raw, oss_base_path=get_oss_base_path()) == MEDIA_REF_OBJECT_KEY:
+        return raw
+
+    if not raw.startswith(("http://", "https://")):
+        return None
+
+    parsed = urlparse(raw)
+    host = (parsed.netloc or "").strip().lower()
+    if not host:
+        return None
+
+    base_path = get_oss_base_path()
+    bucket_name = (os.getenv("OSS_BUCKET_NAME") or "").strip().lower()
+    endpoint_host = _normalized_endpoint_host(os.getenv("OSS_ENDPOINT"))
+    candidate_hosts = {item for item in (endpoint_host, f"{bucket_name}.{endpoint_host}") if item}
+
+    path = unquote((parsed.path or "").lstrip("/"))
+    if not path:
+        return None
+
+    if bucket_name and endpoint_host and host == endpoint_host:
+        bucket_prefix = f"{bucket_name}/"
+        if path.startswith(bucket_prefix):
+            path = path[len(bucket_prefix):]
+
+    if host in candidate_hosts or (".oss-" in host and path.startswith(f"{base_path}/")):
+        return path if path.startswith(f"{base_path}/") else None
+
+    return None
+
+
+def normalize_oss_media_ref(value: str) -> str:
+    object_key = extract_object_key_from_oss_url(value)
+    return object_key or value
+
+
 class OSSImageUploader:
     """
     OSS Uploader supporting Private OSS + Dynamic Signing strategy.
@@ -83,6 +137,10 @@ class OSSImageUploader:
         if not all([self.access_key_id, self.access_key_secret, self.endpoint, self.bucket_name]):
             logger.warning("OSS credentials not fully configured. OSS upload will be disabled.")
             print("DEBUG: OSS init - FAILED: missing credentials")
+            self.bucket = None
+        elif oss2 is None:
+            logger.warning("oss2 package not installed. OSS upload will be disabled.")
+            print("DEBUG: OSS init - FAILED: missing oss2 package")
             self.bucket = None
         else:
             try:
@@ -269,8 +327,9 @@ def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
     
     def process_value(value):
         if isinstance(value, str):
-            if is_object_key(value):
-                signed_url = uploader.sign_url_for_display(value)
+            normalized = normalize_oss_media_ref(value)
+            if is_object_key(normalized):
+                signed_url = uploader.sign_url_for_display(normalized)
                 return signed_url if signed_url else value
             # print(f"DEBUG: sign_oss_urls_in_data - skipping string '{value[:50]}...'")
             return value

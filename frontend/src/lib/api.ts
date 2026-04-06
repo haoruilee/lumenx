@@ -473,6 +473,13 @@ export const api = {
         return res.data;
     },
 
+    expandFrameDescription: async (scriptId: string, frameId: string, instruction: string = "") => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/${frameId}/expand_description`, {
+            instruction,
+        });
+        return res.data as { frame_id: string; action_description: string; frame_updated: boolean };
+    },
+
     updateProjectStyle: async (scriptId: string, stylePreset: string, stylePrompt?: string) => {
         const res = await axios.patch(`${API_URL}/projects/${scriptId}/style`, {
             style_preset: stylePreset,

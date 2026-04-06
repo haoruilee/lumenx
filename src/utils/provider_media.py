@@ -18,6 +18,7 @@ from .provider_registry import (
     ProviderRegistry,
     get_default_provider_registry,
 )
+from .oss_utils import normalize_oss_media_ref
 
 
 RESOLVE_HEADER_DASHSCOPE_OSS_RESOURCE = "X-DashScope-OssResourceResolve"
@@ -240,6 +241,8 @@ def resolve_media_input(
     """
     if not isinstance(ref, str) or not ref.strip():
         raise ValueError("ref must be a non-empty string")
+
+    ref = normalize_oss_media_ref(ref.strip())
 
     active_registry = registry or get_default_provider_registry()
     family = active_registry.get_family_config(model_name)

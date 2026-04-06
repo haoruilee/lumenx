@@ -32,12 +32,26 @@ from .models import (
 from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
 from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
 from ...utils import setup_logging
+from ...utils.api_keys import get_matching_env_keys_for_bases
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, set_key
 
 app = FastAPI(title="AI Comic Gen API")
 logger = logging.getLogger(__name__)
 CONFIGURED_PLACEHOLDER = "__CONFIGURED__"
+SECRET_ENV_BASE_NAMES = (
+    "DASHSCOPE_API_KEY",
+    "AIPING_API_KEY",
+    "LUMENX_ENTRY_PASSWORD",
+    "OPENAI_API_KEY",
+    "ALIBABA_CLOUD_ACCESS_KEY_ID",
+    "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+    "KLING_ACCESS_KEY",
+    "KLING_SECRET_KEY",
+    "VIDU_API_KEY",
+    "SEEDANCE_API_KEY",
+)
+SECRET_ENV_BASE_NAMES_UPPER = tuple(key.upper() for key in SECRET_ENV_BASE_NAMES)
 
 # Setup logging to user directory
 setup_logging()
@@ -700,6 +714,17 @@ class EnvConfig(ProviderRoutingConfig):
     SEEDANCE_API_KEY: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
+    class Config:
+        extra = "allow"
+
+
+def _is_secret_env_key(env_key: str) -> bool:
+    normalized = (env_key or "").upper()
+    return any(
+        normalized == base_name or normalized.startswith(f"{base_name}_")
+        for base_name in SECRET_ENV_BASE_NAMES_UPPER
+    )
+
 
 def _normalize_provider_mode(value: Optional[str]) -> str:
     normalized = (value or "").strip().lower()
@@ -834,32 +859,24 @@ async def update_env_config(config: EnvConfig):
 
         # Filter out None values and serialize enum values as plain strings.
         config_dict: Dict[str, str] = {}
-        protected_secret_keys = {
-            "DASHSCOPE_API_KEY",
-            "AIPING_API_KEY",
-            "LUMENX_ENTRY_PASSWORD",
-            "OPENAI_API_KEY",
-            "ALIBABA_CLOUD_ACCESS_KEY_ID",
-            "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
-            "KLING_ACCESS_KEY",
-            "KLING_SECRET_KEY",
-            "VIDU_API_KEY",
-            "SEEDANCE_API_KEY",
-        }
+        keys_to_remove = []
         for key, value in raw_config.items():
             if value is None:
                 continue
             if isinstance(value, ProviderBackend):
                 config_dict[key] = value.value
             else:
-                if key in protected_secret_keys and isinstance(value, str) and value.strip() == CONFIGURED_PLACEHOLDER:
+                if _is_secret_env_key(key) and isinstance(value, str) and value.strip() == CONFIGURED_PLACEHOLDER:
+                    continue
+                if _is_secret_env_key(key) and isinstance(value, str) and not value.strip():
+                    os.environ.pop(key, None)
+                    keys_to_remove.append(key)
                     continue
                 config_dict[key] = value
 
         # Process endpoint overrides: validate keys against known providers
         from ...utils.endpoints import PROVIDER_DEFAULTS
         allowed_keys = {f"{p}_BASE_URL" for p in PROVIDER_DEFAULTS}
-        keys_to_remove = []
         for env_key, value in endpoint_overrides.items():
             if env_key not in allowed_keys:
                 logger.warning(f"Ignoring unknown endpoint key: {env_key}")
@@ -1132,6 +1149,25 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error in refine_storyboard_prompt: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/projects/{script_id}/frames/{frame_id}/expand_description")
+async def expand_frame_description(
+    script_id: str,
+    frame_id: str,
+    request: Optional[Dict[str, str]] = None,
+):
+    """Use LLM to expand the Action / Visuals text for a storyboard frame."""
+    try:
+        instruction = ""
+        if isinstance(request, dict):
+            instruction = (request.get("instruction") or "").strip()
+        return pipeline.expand_frame_description(script_id, frame_id, instruction=instruction)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error expanding frame description: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2114,7 +2150,7 @@ async def get_env_config(request: Request):
             raw = os.getenv(env_key, "")
             return CONFIGURED_PLACEHOLDER if raw.strip() else ""
 
-        return {
+        response = {
             "DASHSCOPE_API_KEY": _secret_value("DASHSCOPE_API_KEY"),
             "AIPING_API_KEY": _secret_value("AIPING_API_KEY"),
             "LUMENX_ENTRY_PASSWORD": "",
@@ -2138,6 +2174,13 @@ async def get_env_config(request: Request):
             "endpoint_overrides": endpoint_overrides,
             "auth_required": is_entry_auth_enabled() and not authenticated,
         }
+
+        for env_key in get_matching_env_keys_for_bases(("OPENAI_API_KEY",)):
+            if env_key.upper() == "OPENAI_API_KEY":
+                continue
+            response[env_key] = _secret_value(env_key)
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

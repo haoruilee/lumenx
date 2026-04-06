@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Any
 import requests
 
 from ...utils import log_exception_with_context
+from ...utils.api_keys import call_with_api_key_rotation, get_api_keys
 from ...utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
@@ -28,18 +29,18 @@ class LLMAdapter:
 
     def __init__(self):
         self.provider = os.getenv("LLM_PROVIDER", "dashscope").lower()
-        self._client = None
+        self._clients: Dict[str, Any] = {}
         logger.info(f"LLM Adapter initialized with provider: {self.provider}")
 
     @property
     def is_configured(self) -> bool:
         if self.provider == "openai":
-            return bool(os.getenv("OPENAI_API_KEY"))
+            return bool(get_api_keys("OPENAI_API_KEY"))
         return bool(os.getenv("DASHSCOPE_API_KEY"))
 
-    def _get_client(self):
+    def _get_client(self, api_key: str):
         """Get or create the OpenAI-compatible client (lazy, cached)."""
-        if self._client is None:
+        if api_key not in self._clients:
             try:
                 from openai import OpenAI
             except ImportError:
@@ -48,17 +49,17 @@ class LLMAdapter:
                 )
 
             if self.provider == "openai":
-                self._client = OpenAI(
-                    api_key=os.getenv("OPENAI_API_KEY"),
+                self._clients[api_key] = OpenAI(
+                    api_key=api_key,
                     base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 )
             else:
                 # DashScope uses OpenAI-compatible endpoint
-                self._client = OpenAI(
-                    api_key=os.getenv("DASHSCOPE_API_KEY"),
+                self._clients[api_key] = OpenAI(
+                    api_key=api_key,
                     base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
                 )
-        return self._client
+        return self._clients[api_key]
 
     def _chat_via_dashscope_http(
         self,
@@ -152,8 +153,6 @@ class LLMAdapter:
                 response_format=response_format,
             )
 
-        client = self._get_client()
-
         kwargs: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -162,8 +161,16 @@ class LLMAdapter:
             kwargs["response_format"] = response_format
 
         try:
-            response = client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            api_keys = get_api_keys("OPENAI_API_KEY")
+            if not api_keys:
+                raise RuntimeError("OpenAI API key not configured")
+
+            def _call(api_key: str) -> str:
+                client = self._get_client(api_key)
+                response = client.chat.completions.create(**kwargs)
+                return response.choices[0].message.content
+
+            return call_with_api_key_rotation(api_keys, _call)
         except Exception as e:
             log_exception_with_context(
                 logger,
@@ -172,6 +179,7 @@ class LLMAdapter:
                 model=model,
                 response_format=response_format,
                 message_count=len(messages),
+                openai_key_count=len(get_api_keys("OPENAI_API_KEY")) if self.provider == "openai" else None,
                 error=str(e),
             )
             provider_label = "DashScope" if self.provider != "openai" else "OpenAI"

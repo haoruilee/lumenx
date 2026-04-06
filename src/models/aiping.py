@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 import requests
 
 from .base import VideoGenModel
+from ..utils.api_keys import call_with_api_key_rotation, get_api_keys
 from ..utils.endpoints import get_provider_base_url
 from ..utils.provider_media import resolve_media_input
 
@@ -31,11 +32,14 @@ class AipingVideoModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         params = config.get("params", {})
-        self.api_key = (
-            config.get("api_key")
-            or os.getenv("AIPING_API_KEY", "")
-            or os.getenv("OPENAI_API_KEY", "")
-            or os.getenv("SEEDANCE_API_KEY", "")
+        configured_api_key = (config.get("api_key") or "").strip()
+        self.api_keys = (
+            [configured_api_key]
+            if configured_api_key
+            else get_api_keys(
+                "AIPING_API_KEY",
+                fallback_base_names=("OPENAI_API_KEY", "SEEDANCE_API_KEY"),
+            )
         )
         self.model_name = params.get("model_name", _DEFAULT_MODEL)
 
@@ -46,9 +50,9 @@ class AipingVideoModel(VideoGenModel):
             or get_provider_base_url("SEEDANCE", default=_DEFAULT_BASE_URL)
         )
 
-    def _auth_headers(self) -> Dict[str, str]:
+    def _auth_headers(self, api_key: str) -> Dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -107,8 +111,8 @@ class AipingVideoModel(VideoGenModel):
         resolution: str,
         aspect_ratio: str,
         image_value: Optional[str],
-        mode: Optional[str],
-        sound: Optional[str],
+        mode: Optional[str] = None,
+        sound: Optional[str] = None,
     ) -> Dict[str, Any]:
         normalized = (model_name or "").strip().lower()
         body: Dict[str, Any] = {
@@ -172,7 +176,7 @@ class AipingVideoModel(VideoGenModel):
         sound = kwargs.get("sound")
         start_time = time.time()
 
-        if not self.api_key:
+        if not self.api_keys:
             raise RuntimeError("AIPING_API_KEY is not configured")
 
         image_value = self._resolve_image(img_url, img_path, model_name)
@@ -188,49 +192,52 @@ class AipingVideoModel(VideoGenModel):
         )
 
         submit_url = f"{self._base_url()}/videos"
-        logger.info(
-            "[AIPing] Submitting video task (model=%s, duration=%ss, aspect_ratio=%s, has_image=%s)",
-            model_name,
-            duration,
-            aspect_ratio,
-            bool(image_value),
-        )
-        resp = requests.post(submit_url, headers=self._auth_headers(), json=body, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        task_id = data.get("id")
-        if not task_id:
-            raise RuntimeError(f"[AIPing] No task id in submit response: {data}")
+        def _submit_and_wait(api_key: str) -> Tuple[str, float]:
+            logger.info(
+                "[AIPing] Submitting video task (model=%s, duration=%ss, aspect_ratio=%s, has_image=%s)",
+                model_name,
+                duration,
+                aspect_ratio,
+                bool(image_value),
+            )
+            resp = requests.post(submit_url, headers=self._auth_headers(api_key), json=body, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            task_id = data.get("id")
+            if not task_id:
+                raise RuntimeError(f"[AIPing] No task id in submit response: {data}")
 
-        poll_url = f"{self._base_url()}/videos/{task_id}"
-        max_wait = int(kwargs.get("max_wait", 900))
-        poll_interval = int(kwargs.get("poll_interval", 5))
-        elapsed = 0
+            poll_url = f"{self._base_url()}/videos/{task_id}"
+            max_wait = int(kwargs.get("max_wait", 900))
+            poll_interval = int(kwargs.get("poll_interval", 5))
+            elapsed = 0
 
-        while elapsed < max_wait:
-            time.sleep(poll_interval)
-            elapsed += poll_interval
+            while elapsed < max_wait:
+                time.sleep(poll_interval)
+                elapsed += poll_interval
 
-            poll_resp = requests.get(poll_url, headers=self._auth_headers(), timeout=30)
-            poll_resp.raise_for_status()
-            result = poll_resp.json()
-            status = (result.get("status") or "").lower()
-            logger.info("[AIPing] model=%s task=%s status=%s (%ss)", model_name, task_id, status, elapsed)
+                poll_resp = requests.get(poll_url, headers=self._auth_headers(api_key), timeout=30)
+                poll_resp.raise_for_status()
+                result = poll_resp.json()
+                status = (result.get("status") or "").lower()
+                logger.info("[AIPing] model=%s task=%s status=%s (%ss)", model_name, task_id, status, elapsed)
 
-            if status in {"completed", "succeeded"}:
-                video_url = self._extract_video_url(result)
-                if not video_url:
-                    raise RuntimeError(f"[AIPing] Task done but no video URL found: {result}")
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                video_bytes = requests.get(video_url, timeout=300).content
-                with open(output_path, "wb") as fh:
-                    fh.write(video_bytes)
-                total = time.time() - start_time
-                logger.info("[AIPing] Downloaded result for %s -> %s", model_name, output_path)
-                return output_path, total
+                if status in {"completed", "succeeded"}:
+                    video_url = self._extract_video_url(result)
+                    if not video_url:
+                        raise RuntimeError(f"[AIPing] Task done but no video URL found: {result}")
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    video_bytes = requests.get(video_url, timeout=300).content
+                    with open(output_path, "wb") as fh:
+                        fh.write(video_bytes)
+                    total = time.time() - start_time
+                    logger.info("[AIPing] Downloaded result for %s -> %s", model_name, output_path)
+                    return output_path, total
 
-            if status in {"failed", "error", "cancelled"}:
-                error = result.get("error") or result.get("message") or result
-                raise RuntimeError(f"[AIPing] Task failed: {error}")
+                if status in {"failed", "error", "cancelled"}:
+                    error = result.get("error") or result.get("message") or result
+                    raise RuntimeError(f"[AIPing] Task failed: {error}")
 
-        raise RuntimeError(f"[AIPing] Timed out after {max_wait}s (task_id={task_id}, model={model_name})")
+            raise RuntimeError(f"[AIPing] Timed out after {max_wait}s (task_id={task_id}, model={model_name})")
+
+        return call_with_api_key_rotation(self.api_keys, _submit_and_wait)

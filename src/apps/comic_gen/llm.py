@@ -126,6 +126,32 @@ OUTPUT:
     "prompt_en": "character1 bursts through the door with an exaggerated jump, landing energetically with ears perked up. The room is dimly lit with warm ambient light streaming through dusty windows. character1 looks around excitedly and says: 'I made it just in time!' Camera follows the jump with a slight tilt."
 }}""".strip()
 
+DEFAULT_FRAME_DESCRIPTION_EXPAND_PROMPT = """
+# ROLE
+You are a storyboard writer helping expand a single shot description for film previsualization.
+
+# TASK
+Rewrite the frame description into a richer, more visual "Action / Visuals" paragraph.
+
+# RULES
+1. Preserve the original story facts, characters, dialogue intent, and shot meaning.
+2. Expand with concrete visual detail: body movement, staging, environmental cues, texture, lighting, and moment-to-moment action.
+3. Do not invent major new plot events, props, or character relationships.
+4. Keep it suitable for a storyboard shot description, not a full screenplay.
+5. Return Chinese only.
+6. Return STRICTLY a JSON object in this format:
+{
+  "action_description": "expanded description"
+}
+7. If additional user guidance is provided, follow it as long as it does not conflict with the original shot facts.
+
+# FRAME CONTEXT
+{FRAME_CONTEXT}
+
+# ADDITIONAL GUIDANCE
+{INSTRUCTION}
+""".strip()
+
 class ScriptProcessor:
     def __init__(self, api_key: str = None):
         self._api_key = api_key
@@ -1044,4 +1070,33 @@ Props:
 
         except Exception:
             logger.exception("Failed to polish R2V prompt")
+            return fallback
+
+    def expand_frame_description(self, frame_context: str, instruction: str = "") -> Dict[str, str]:
+        fallback = {"action_description": frame_context}
+
+        if not self.is_configured:
+            return fallback
+
+        prompt = DEFAULT_FRAME_DESCRIPTION_EXPAND_PROMPT.replace(
+            "{FRAME_CONTEXT}",
+            (frame_context or "").strip(),
+        ).replace(
+            "{INSTRUCTION}",
+            (instruction or "").strip() or "None",
+        )
+
+        try:
+            content = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            ).strip()
+            content = _strip_markdown_json(content)
+            result = json.loads(content.strip())
+            action_description = (result.get("action_description") or "").strip()
+            if not action_description:
+                return fallback
+            return {"action_description": action_description}
+        except Exception:
+            logger.exception("Failed to expand frame description")
             return fallback

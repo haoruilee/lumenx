@@ -273,6 +273,9 @@ function StoryboardInspector() {
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
+    const [isExpandingDescription, setIsExpandingDescription] = useState(false);
+    const [descriptionGuidanceOpen, setDescriptionGuidanceOpen] = useState(false);
+    const [descriptionGuidanceByFrame, setDescriptionGuidanceByFrame] = useState<Record<string, string>>({});
 
     if (!currentProject) return null;
 
@@ -350,6 +353,33 @@ function StoryboardInspector() {
         const finalPrompt = promptParts.join(" . ");
         updateFrame({ image_prompt: finalPrompt });
     };
+
+    const handleExpandDescription = async () => {
+        if (!currentProject || !selectedFrame) return;
+
+        setIsExpandingDescription(true);
+        try {
+            const instruction = descriptionGuidanceByFrame[selectedFrame.id] || "";
+            const result = await api.expandFrameDescription(currentProject.id, selectedFrame.id, instruction);
+            const updatedFrames = currentProject.frames.map((f: any) =>
+                f.id === selectedFrame.id
+                    ? {
+                          ...f,
+                          action_description: result.action_description,
+                          updated_at: Date.now() / 1000,
+                      }
+                    : f
+            );
+            updateProject(currentProject.id, { frames: updatedFrames });
+        } catch (error) {
+            console.error("Failed to expand frame description:", error);
+            alert("AI润色失败");
+        } finally {
+            setIsExpandingDescription(false);
+        }
+    };
+
+    const currentGuidance = selectedFrame ? (descriptionGuidanceByFrame[selectedFrame.id] || "") : "";
 
     const toggleCharacter = (charId: string) => {
         const currentIds = selectedFrame.character_ids || [];
@@ -438,7 +468,45 @@ function StoryboardInspector() {
 
             {/* Action Description */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Action / Visuals</label>
+                <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Action / Visuals</label>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setDescriptionGuidanceOpen((prev) => !prev)}
+                            className="text-[10px] font-semibold text-gray-400 transition-colors hover:text-gray-200"
+                        >
+                            {descriptionGuidanceOpen ? "收起补充要求" : "补充要求"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleExpandDescription}
+                            disabled={isExpandingDescription}
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <Sparkles size={12} />
+                            {isExpandingDescription ? "润色中..." : "AI润色"}
+                        </button>
+                    </div>
+                </div>
+                {descriptionGuidanceOpen && (
+                    <div className="space-y-1">
+                        <textarea
+                            className="w-full h-20 bg-black/20 border border-white/10 rounded-lg p-3 text-[11px] text-gray-300 resize-none focus:outline-none focus:border-primary/50"
+                            value={currentGuidance}
+                            onChange={(e) =>
+                                setDescriptionGuidanceByFrame((prev) => ({
+                                    ...prev,
+                                    [selectedFrame.id]: e.target.value,
+                                }))
+                            }
+                            placeholder="可选：例如“更强调肢体动作和镜头调度”“保持简洁，不要太文学化”“强化压迫感和冷色氛围”"
+                        />
+                        <p className="text-[10px] leading-relaxed text-gray-500">
+                            默认会保留原分镜事实。这里适合补充你希望 AI 偏重的方向，例如动作层次、镜头感、氛围、节奏、写实程度。
+                        </p>
+                    </div>
+                )}
                 <textarea
                     className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.action_description || ""}
